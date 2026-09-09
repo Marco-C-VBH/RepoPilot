@@ -23,74 +23,26 @@ from repopilot.sandbox.docker import (
     remove_image,
 )
 from repopilot.sandbox.results import TestOutcome
-from tests.gitfixtures import init_repo
+from tests.fixture_repo import (
+    ABOVE,
+    BELOW,
+    BUG_PATCH,
+    GOLD_PATCH,
+    HIDDEN,
+    HIDDEN_TEST_PATCH,
+    INSIDE,
+    TEST_COMMAND,
+    create_fixture_repo,
+)
 
 pytestmark = pytest.mark.docker
 
-FILES = {
-    "pyproject.toml": (
-        '[project]\nname = "fixturepkg"\nversion = "0.0.1"\n\n'
-        '[tool.pytest.ini_options]\npythonpath = ["."]\n'
-    ),
-    "fixturepkg/__init__.py": (
-        "def clamp(value, low, high):\n"
-        '    """Clamp value into [low, high]."""\n'
-        "    return max(low, min(value, high))\n"
-    ),
-    "tests/test_clamp.py": (
-        "from fixturepkg import clamp\n\n\n"
-        "def test_inside():\n    assert clamp(5, 0, 10) == 5\n\n\n"
-        "def test_above():\n    assert clamp(15, 0, 10) == 10\n\n\n"
-        "def test_below():\n    assert clamp(-5, 0, 10) == 0\n"
-    ),
-}
-
-BUG_PATCH = """\
-diff --git a/fixturepkg/__init__.py b/fixturepkg/__init__.py
---- a/fixturepkg/__init__.py
-+++ b/fixturepkg/__init__.py
-@@ -1,3 +1,3 @@
- def clamp(value, low, high):
-     \"\"\"Clamp value into [low, high].\"\"\"
--    return max(low, min(value, high))
-+    return max(low, min(value, high - 1))
-"""
-
-GOLD_PATCH = """\
-diff --git a/fixturepkg/__init__.py b/fixturepkg/__init__.py
---- a/fixturepkg/__init__.py
-+++ b/fixturepkg/__init__.py
-@@ -1,3 +1,3 @@
- def clamp(value, low, high):
-     \"\"\"Clamp value into [low, high].\"\"\"
--    return max(low, min(value, high - 1))
-+    return max(low, min(value, high))
-"""
-
-HIDDEN_TEST_PATCH = """\
-diff --git a/tests/test_hidden.py b/tests/test_hidden.py
-new file mode 100644
---- /dev/null
-+++ b/tests/test_hidden.py
-@@ -0,0 +1,5 @@
-+from fixturepkg import clamp
-+
-+
-+def test_upper_bound_is_inclusive():
-+    assert clamp(10, 0, 10) == 10
-"""
-
-TEST_COMMAND = "pytest tests"
-ABOVE = "tests/test_clamp.py::test_above"
-INSIDE = "tests/test_clamp.py::test_inside"
-BELOW = "tests/test_clamp.py::test_below"
-HIDDEN = "tests/test_hidden.py::test_upper_bound_is_inclusive"
 
 
 @pytest.fixture(scope="module")
 def fixture_repo(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
     path = tmp_path_factory.mktemp("fixture-repo") / "repo"
-    return path, init_repo(path, FILES)
+    return path, create_fixture_repo(path)
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +51,11 @@ def task_image(
 ) -> Iterator[str]:
     path, sha = fixture_repo
     spec = ImageSpec(
-        repo=str(path), base_commit=sha, python="3.11", install="true", bug_patch=BUG_PATCH
+        repo=str(path),
+        base_commit=sha,
+        python="3.11",
+        install="true",
+        bug_patch=BUG_PATCH,
     )
     tag = build_task_image(spec, cache_dir=tmp_path_factory.mktemp("cache"))
     yield tag
