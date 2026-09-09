@@ -29,6 +29,27 @@ Docker (Docker Desktop, OrbStack or colima) is required for sandboxed test
 execution. The first `-m docker` run builds the base image (python:3.11-slim +
 git + pytest), which takes a minute or two; later runs reuse it.
 
+## Running the benchmark
+
+```bash
+uv run python -m evals.runner --solver null --expect fail            # untouched: all FAIL
+uv run python -m evals.runner --solver gold --expect pass --repeat 2 # reference fix: all PASS, twice
+uv run python -m evals.runner --solver gold --ids cachetools_001     # a subset
+```
+
+Every run writes `results/<solver>-<timestamp>-<id>/` with `results.jsonl` (one
+record per task and repeat: status, reason codes, per-test outcomes, timings),
+`summary.json` (counts, pass rate, determinism verdict) and `logs/<task>.log`
+(the candidate patch, the test output, the per-test verdict table). The two
+commands above are the harness's own acceptance test: a task that the null solver
+passes or the gold solver fails is mis-packaged, and a task whose outcome differs
+between repeats is flaky.
+
+A solver is anything with `solve(task, image) -> patch | None`; the harness always
+judges the returned patch in a fresh container, so a solver's own workspace can
+never influence the verdict. The Phase 1 baseline agent will be one more entry in
+`evals/solvers.py`.
+
 ## Layout
 
 ```
@@ -46,10 +67,14 @@ evals/                     RepoPilot-Bench
   benchmark/task.schema.json   exported JSON Schema (scripts/export_task_schema.py)
   benchmark/examples/      a fully filled-in illustrative task (not runnable)
   benchmark/tasks/         the benchmark itself, one JSON file per task
-  runner.py                benchmark runner CLI                     (TODO, step 3)
+  judge.py                 fail_to_pass ∧ pass_to_pass -> Verdict with reason codes
+  solvers.py               Solver protocol; `null` and `gold` oracles
+  harness.py               build image -> solve -> evaluate in a fresh sandbox -> TaskResult
+  runner.py                CLI: results.jsonl, summary.json, per-task logs, --repeat, --expect
 docker/base.Dockerfile     base image for sandbox containers
+docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
 scripts/                   validate_tasks.py, export_task_schema.py
-tests/                     unit tests for the harness itself
+tests/                     unit tests (fast) + `-m docker` end-to-end tests
 ```
 
 ## Task format
@@ -83,8 +108,9 @@ that writes exact node-id outcomes to JSON, so a missing node id is always
 - [x] Repository skeleton, `pyproject.toml`, task schema + registry + unit tests
 - [x] Docker sandbox: per-task image build, throwaway container, `--network none`,
       CPU/memory/pids/time limits, per-test outcomes (`uv run pytest -m docker`)
-- [ ] Runner with `null` and `gold` oracle solvers — `null` → 0/N, `gold` → N/N,
-      and a second run gives identical per-task results
+- [x] Runner with `null` and `gold` oracle solvers, `--expect` and `--repeat`
+      (`null` → 0/N, `gold` → N/N, repeated runs identical) — verified end to end
+      on a fixture task by `uv run pytest -m docker`
 - [ ] 10–20 controlled-mutation tasks on 2–3 small, pure-Python, fast-testing repos
 
 Phase 1 (baseline agent) starts only after the checklist above is green.
