@@ -28,6 +28,9 @@ packages = ["repopilot", "evals"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "docker: needs a running Docker daemon (integration test; skipped automatically otherwise)",
+]
 
 [tool.ruff]
 line-length = 100

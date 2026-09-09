@@ -18,20 +18,28 @@ agent exist; nothing here will be a placeholder number.
 
 ```bash
 uv sync                                   # creates .venv and installs dev tools
-uv run pytest                             # schema / registry / limits tests
+uv run pytest                             # unit tests; Docker tests skip if no daemon
+uv run pytest -m docker                   # sandbox end-to-end tests (needs Docker running)
 uv run ruff check . && uv run ruff format --check .
 uv run python scripts/validate_tasks.py   # validate every task in evals/benchmark/tasks
 uv run python -m evals.runner --list      # tasks that a benchmark run would select
 ```
 
-Docker is required from Phase 0 step 2 onward (sandboxed test execution).
+Docker (Docker Desktop, OrbStack or colima) is required for sandboxed test
+execution. The first `-m docker` run builds the base image (python:3.11-slim +
+git + pytest), which takes a minute or two; later runs reuse it.
 
 ## Layout
 
 ```
 repopilot/                 library
   sandbox/limits.py        resource limits applied to every sandbox container
-  sandbox/docker.py        image build + throwaway test containers  (TODO, step 2)
+  sandbox/repo.py          host-side checkout of a repo at a commit (mirror cache, no .git)
+  sandbox/docker.py        per-task image build + Sandbox container (exec / apply_patch /
+                           run_tests / diff), all through the docker CLI
+  sandbox/results.py       ExecResult, TestRun, per-node-id TestOutcome
+  sandbox/repopilot_pytest_plugin.py   loaded inside the container; exact pytest node
+                           ids -> JSON report (no junit classname guessing)
 evals/                     RepoPilot-Bench
   benchmark/schema.py      Task model — the source of truth for task files
   benchmark/registry.py    loads and validates evals/benchmark/tasks/<id>.json
@@ -58,11 +66,23 @@ agent sees the repository). See `evals/benchmark/schema.py` for every field and 
 invariants the loader enforces, and `evals/benchmark/examples/example_000.json` for
 a complete example.
 
+## Sandbox
+
+Each task gets a content-addressed Docker image (`repopilot-task:<hash>`): the
+repository tree at `base_commit` is exported on the host, copied into the image,
+turned into a single-commit git history (nothing to leak through `git log`), the
+install command runs, and for mutation tasks `bug_patch` is applied and amended into
+that one commit. Network is on during the build only. Every run then starts a fresh
+container with `--network none`, CPU / memory / pids limits, all capabilities
+dropped and an unprivileged user; `Sandbox.run_tests` loads a small pytest plugin
+that writes exact node-id outcomes to JSON, so a missing node id is always
+"not passed", never a parsing accident.
+
 ## Phase 0 checklist
 
 - [x] Repository skeleton, `pyproject.toml`, task schema + registry + unit tests
-- [ ] Docker sandbox: per-task image build, throwaway container, `--network none`,
-      CPU/memory/pids/time limits, junit parsing
+- [x] Docker sandbox: per-task image build, throwaway container, `--network none`,
+      CPU/memory/pids/time limits, per-test outcomes (`uv run pytest -m docker`)
 - [ ] Runner with `null` and `gold` oracle solvers — `null` → 0/N, `gold` → N/N,
       and a second run gives identical per-task results
 - [ ] 10–20 controlled-mutation tasks on 2–3 small, pure-Python, fast-testing repos
