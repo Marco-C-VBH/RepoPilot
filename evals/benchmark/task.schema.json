@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "Category": {
+      "description": "Fault category; drives the failure-analysis breakdown (spec \u00a710.2, \u00a711.2).",
+      "enum": [
+        "off_by_one",
+        "wrong_condition",
+        "missing_check",
+        "state_management",
+        "retry_logic",
+        "cache_invalidation",
+        "exception_handling",
+        "other"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "Difficulty": {
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ],
+      "title": "Difficulty",
+      "type": "string"
+    },
+    "TaskEnv": {
+      "additionalProperties": false,
+      "description": "How the per-task sandbox image is built (spec \u00a79.3).",
+      "properties": {
+        "python": {
+          "default": "3.11",
+          "description": "Python minor version of the sandbox image, e.g. '3.11'.",
+          "pattern": "^3\\.\\d{1,2}$",
+          "title": "Python",
+          "type": "string"
+        },
+        "install": {
+          "default": "pip install -e .",
+          "description": "Shell command run once at image build time, from the repository root, with network access. Must install the project and its test dependencies.",
+          "minLength": 1,
+          "title": "Install",
+          "type": "string"
+        },
+        "test_timeout_seconds": {
+          "default": 300,
+          "description": "Wall-clock limit for a single test run inside the sandbox.",
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Test Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "TaskEnv",
+      "type": "object"
+    },
+    "TaskSource": {
+      "description": "Where the bug comes from (spec \u00a710.2).",
+      "enum": [
+        "real",
+        "mutation"
+      ],
+      "title": "TaskSource",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One RepoPilot-Bench task (spec \u00a710.3, extended for deterministic validation).",
+  "properties": {
+    "id": {
+      "description": "Unique task id, lower_snake_case; the task file must be named '<id>.json'.",
+      "examples": [
+        "cachetools_001"
+      ],
+      "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "repo": {
+      "description": "Git URL (or absolute local path) of the repository to clone.",
+      "minLength": 1,
+      "title": "Repo",
+      "type": "string"
+    },
+    "base_commit": {
+      "description": "Full 40-character commit SHA the sandbox checks out. Short SHAs are rejected.",
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Base Commit",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/TaskSource",
+      "description": "'real' (bug present at base_commit) or 'mutation' (bug injected by bug_patch)."
+    },
+    "description": {
+      "description": "The natural-language bug report shown to the agent. Must not leak the fix.",
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "bug_patch": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Mutation tasks only: unified diff applied to the clean base_commit at image build time to inject the bug. Must be absent for 'real' tasks.",
+      "title": "Bug Patch"
+    },
+    "gold_patch": {
+      "description": "Reference fix as a unified diff. Used by the 'gold' oracle solver to validate the harness and by failure analysis; never shown to the agent.",
+      "title": "Gold Patch",
+      "type": "string"
+    },
+    "hidden_test_patch": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Unified diff adding/changing regression tests, applied only at evaluation time so the agent cannot read the hidden tests from the repository.",
+      "title": "Hidden Test Patch"
+    },
+    "fail_to_pass": {
+      "description": "pytest node ids that fail before the fix and must pass after it.",
+      "examples": [
+        [
+          "tests/test_retry.py::test_retry_is_idempotent"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Fail To Pass",
+      "type": "array"
+    },
+    "pass_to_pass": {
+      "description": "pytest node ids that pass before the fix and must still pass (regression guard).",
+      "items": {
+        "type": "string"
+      },
+      "title": "Pass To Pass",
+      "type": "array"
+    },
+    "test_command": {
+      "description": "Base pytest command run from the repository root, e.g. 'pytest tests/test_retry.py'. The harness appends its own --junitxml flag.",
+      "minLength": 1,
+      "title": "Test Command",
+      "type": "string"
+    },
+    "gold_files": {
+      "description": "Repository-relative files the fix must touch; the localization target (Recall@k).",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Gold Files",
+      "type": "array"
+    },
+    "gold_symbols": {
+      "description": "Functions/classes/methods the fix touches, e.g. 'retry_request'.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Gold Symbols",
+      "type": "array"
+    },
+    "category": {
+      "$ref": "#/$defs/Category"
+    },
+    "difficulty": {
+      "$ref": "#/$defs/Difficulty"
+    },
+    "env": {
+      "$ref": "#/$defs/TaskEnv"
+    }
+  },
+  "required": [
+    "id",
+    "repo",
+    "base_commit",
+    "source",
+    "description",
+    "gold_patch",
+    "fail_to_pass",
+    "test_command",
+    "gold_files",
+    "category",
+    "difficulty"
+  ],
+  "title": "RepoPilot-Bench task",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

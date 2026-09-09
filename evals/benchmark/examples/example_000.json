@@ -1,0 +1,31 @@
+{
+  "id": "example_000",
+  "repo": "https://github.com/example-org/payments-service",
+  "base_commit": "0123456789abcdef0123456789abcdef01234567",
+  "source": "mutation",
+  "description": "Calling retry_request() twice can cause the same payment to be processed more than once. Find the cause and fix it.",
+  "bug_patch": "diff --git a/src/payment/retry.py b/src/payment/retry.py\n--- a/src/payment/retry.py\n+++ b/src/payment/retry.py\n@@ -43,9 +43,7 @@ def retry_request(payment, policy):\n def retry_request(payment, policy):\n     for attempt in range(policy.max_attempts):\n-        if gateway.already_charged(payment.idempotency_key):\n-            return gateway.last_result(payment.idempotency_key)\n         result = gateway.charge(payment)\n         if result.ok:\n             return result\n         sleep(policy.backoff(attempt))\n     raise RetryExhausted(payment)\n",
+  "gold_patch": "diff --git a/src/payment/retry.py b/src/payment/retry.py\n--- a/src/payment/retry.py\n+++ b/src/payment/retry.py\n@@ -43,7 +43,9 @@ def retry_request(payment, policy):\n def retry_request(payment, policy):\n     for attempt in range(policy.max_attempts):\n+        if gateway.already_charged(payment.idempotency_key):\n+            return gateway.last_result(payment.idempotency_key)\n         result = gateway.charge(payment)\n         if result.ok:\n             return result\n         sleep(policy.backoff(attempt))\n     raise RetryExhausted(payment)\n",
+  "hidden_test_patch": "diff --git a/tests/test_retry_idempotency.py b/tests/test_retry_idempotency.py\nnew file mode 100644\n--- /dev/null\n+++ b/tests/test_retry_idempotency.py\n@@ -0,0 +1,12 @@\n+from payment.retry import retry_request\n+from tests.fakes import FakeGateway, FlakyPolicy, make_payment\n+\n+\n+def test_retry_is_idempotent(monkeypatch):\n+    gateway = FakeGateway(fail_first=1)\n+    monkeypatch.setattr(\"payment.retry.gateway\", gateway)\n+    payment = make_payment(amount=100)\n+\n+    retry_request(payment, FlakyPolicy(max_attempts=3))\n+    retry_request(payment, FlakyPolicy(max_attempts=3))\n+    assert gateway.charges_for(payment.idempotency_key) == 1\n",
+  "fail_to_pass": [
+    "tests/test_retry_idempotency.py::test_retry_is_idempotent"
+  ],
+  "pass_to_pass": [
+    "tests/test_retry.py::test_retries_until_success",
+    "tests/test_retry.py::test_raises_after_max_attempts"
+  ],
+  "test_command": "pytest tests/test_retry.py tests/test_retry_idempotency.py",
+  "gold_files": [
+    "src/payment/retry.py"
+  ],
+  "gold_symbols": [
+    "retry_request"
+  ],
+  "category": "retry_logic",
+  "difficulty": "medium",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .[test]",
+    "test_timeout_seconds": 300
+  }
+}

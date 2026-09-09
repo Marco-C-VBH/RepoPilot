@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.python-version.local
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# RepoPilot run artifacts (traces, junit reports, results.jsonl, sandbox scratch)
+results/
+runs/
+.repopilot/
+
+# Secrets / local config
+.env
+.env.*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
