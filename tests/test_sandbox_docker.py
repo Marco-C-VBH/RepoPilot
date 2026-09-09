@@ -38,7 +38,6 @@ from tests.fixture_repo import (
 pytestmark = pytest.mark.docker
 
 
-
 @pytest.fixture(scope="module")
 def fixture_repo(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
     path = tmp_path_factory.mktemp("fixture-repo") / "repo"

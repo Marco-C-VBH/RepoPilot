@@ -8,6 +8,31 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 3 · CI red on `ruff format --check` after the runner commit
+
+**Date:** 2026-09-09 · **Area:** CI / tooling · **Severity:** low
+
+**Symptom.** GitHub Actions failed at `uv run ruff format --check .`:
+`tests/test_sandbox_docker.py:41` had three blank lines before a top-level
+`@pytest.fixture` where the formatter allows two. Tests were green; only the
+format gate was red.
+
+**Root cause.** The fixture constants were moved out of that file into
+`tests/fixture_repo.py` with a scripted text edit that removed the block but
+left its surrounding blank lines behind. The pre-delivery `ruff format --check`
+still reported the file as formatted because ruff's cache entry for it was
+stale (the file lives on a network mount whose mtimes ruff's cache keys on), so
+the unformatted file shipped.
+
+**Fix.** `ruff format tests/test_sandbox_docker.py`; the pre-delivery check now
+runs with `--no-cache`.
+
+**Guard.** CI itself is the guard — it caught the problem. Lesson for scripted
+refactors: re-run the formatter on the touched file, and never trust a cached
+formatter verdict for a file that was just rewritten out-of-band.
+
+---
+
 ## 2 · Docker integration tests skipped silently
 
 **Date:** 2026-09-09 · **Area:** tests / sandbox · **Severity:** low
