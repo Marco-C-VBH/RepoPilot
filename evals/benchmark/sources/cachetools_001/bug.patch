@@ -1,0 +1,13 @@
+diff --git a/src/cachetools/__init__.py b/src/cachetools/__init__.py
+index e992f5c..17a4c87 100644
+--- a/src/cachetools/__init__.py
++++ b/src/cachetools/__init__.py
+@@ -554,7 +554,7 @@ class TTLCache(_TimedCache):
+         expired = []
+         cache_delitem = Cache.__delitem__
+         cache_getitem = Cache.__getitem__
+-        while curr is not root and not (time < curr.expires):
++        while curr is not root and time > curr.expires:
+             expired.append((curr.key, cache_getitem(self, curr.key)))
+             cache_delitem(self, curr.key)
+             del links[curr.key]

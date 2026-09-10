@@ -1,0 +1,16 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/cachetools_001
+id = "cachetools_001"
+repo = "https://github.com/tkem/cachetools"
+commit = "4500e3d04288738d25acbb4973eb3c3e1bf41db9"            # full 40-char SHA the task is pinned to
+category = "cache_invalidation"       # off_by_one | wrong_condition | missing_check | state_management
+                               # | retry_logic | cache_invalidation | exception_handling | other
+difficulty = "medium"   # easy | medium | hard
+test_command = "pytest tests/test_lru.py tests/test_ttl.py"   # pytest command run from the repo root; keep it fast
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300
+
+# Optional: override the AST-derived symbols, e.g. gold_symbols = ["LRUCache.__setitem__"]

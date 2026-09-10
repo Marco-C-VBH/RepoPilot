@@ -1,0 +1,37 @@
+diff --git a/tests/test_repopilot_cachetools_001.py b/tests/test_repopilot_cachetools_001.py
+new file mode 100644
+index 0000000..4d11839
+--- /dev/null
++++ b/tests/test_repopilot_cachetools_001.py
+@@ -0,0 +1,30 @@
++from cachetools import TTLCache
++
++
++class Clock:
++    def __init__(self, now=10.0):
++        self.now = now
++
++    def __call__(self):
++        return self.now
++
++
++def test_expire_evicts_items_whose_ttl_ends_exactly_now():
++    clock = Clock()
++    cache = TTLCache(maxsize=10, ttl=5, timer=clock)
++    cache["a"] = 1
++    cache["b"] = 2
++    clock.now = 15.0  # both items expire at t=15
++    assert sorted(cache.expire()) == [("a", 1), ("b", 2)]
++    assert cache.currsize == 0
++    assert list(cache) == []
++
++
++def test_len_and_membership_agree_at_the_ttl_boundary():
++    clock = Clock()
++    cache = TTLCache(maxsize=10, ttl=3, timer=clock)
++    cache["k"] = "v"
++    clock.now = 13.0
++    assert "k" not in cache
++    assert len(cache) == 0
++    assert cache.get("k") is None
+\ No newline at end of file
