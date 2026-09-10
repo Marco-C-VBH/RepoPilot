@@ -1,0 +1,44 @@
+diff --git a/tests/test_repopilot_cachetools_002.py b/tests/test_repopilot_cachetools_002.py
+new file mode 100644
+index 0000000..f1d70c9
+--- /dev/null
++++ b/tests/test_repopilot_cachetools_002.py
+@@ -0,0 +1,38 @@
++from cachetools import TLRUCache
++
++
++class Clock:
++    def __init__(self, now=0.0):
++        self.now = now
++
++    def __call__(self):
++        return self.now
++
++
++def ten_seconds(_key, _value, now):
++    return now + 10
++
++
++def test_reassigning_a_key_keeps_it_until_the_new_deadline():
++    clock = Clock()
++    cache = TLRUCache(maxsize=10, ttu=ten_seconds, timer=clock)
++    cache["k"] = 1  # would expire at t=10
++    clock.now = 5.0
++    cache["k"] = 2  # now expires at t=15
++    clock.now = 12.0
++    assert len(cache) == 1
++    assert cache["k"] == 2
++    assert "k" in cache
++
++
++def test_cache_stays_usable_after_the_reassigned_entry_expires():
++    clock = Clock()
++    cache = TLRUCache(maxsize=10, ttu=ten_seconds, timer=clock)
++    cache["k"] = 1
++    clock.now = 5.0
++    cache["k"] = 2
++    clock.now = 20.0
++    assert cache.expire() == [("k", 2)]
++    assert len(cache) == 0
++    cache["k"] = 3
++    assert cache["k"] == 3

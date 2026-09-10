@@ -1,0 +1,13 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/cachetools_002
+id = "cachetools_002"
+repo = "https://github.com/tkem/cachetools"
+commit = "4500e3d04288738d25acbb4973eb3c3e1bf41db9"
+category = "cache_invalidation"
+difficulty = "hard"
+test_command = "pytest tests/test_tlru.py tests/test_ttl.py"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

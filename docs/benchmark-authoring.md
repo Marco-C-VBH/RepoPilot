@@ -121,6 +121,17 @@ have visible failing tests (the agent can run them and iterate), and three to fi
 tasks should be caught only by the hidden test (the agent must reproduce from the
 description alone). The report tells you which kind you made.
 
+**Description and hidden tests must agree.** Every behaviour a hidden test checks
+must be stated in the description or follow directly from it. Otherwise a solver
+that fixes exactly what was reported can be failed for a side effect it was never
+told about — the "tests check functionality not mentioned in the problem
+statement" failure that SWE-bench Verified had to filter out. When you shorten a
+description to raise the difficulty, drop the matching test too. A useful check:
+imagine a *different* reasonable fix for the described symptom (a guard at the
+point where the symptom appears rather than at the root cause) and make sure it
+would pass the hidden tests as well; if it would not, either describe the extra
+behaviour or remove the test.
+
 **Test command.** A pytest command run from the repo root, targeting the one or
 two test files that cover the mutated code, so a run stays under ~10 s (the
 oracle validation runs every task several times). Do not list the hidden file;

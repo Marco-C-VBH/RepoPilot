@@ -1,0 +1,17 @@
+diff --git a/src/cachetools/__init__.py b/src/cachetools/__init__.py
+index e992f5c..3ff574d 100644
+--- a/src/cachetools/__init__.py
++++ b/src/cachetools/__init__.py
+@@ -641,12 +641,6 @@ class TLRUCache(_TimedCache):
+                 # one should remove the existing item
+                 return self.__delitem(key)
+             cache_setitem(self, key, value)
+-        # removing an existing item would break the heap structure, so
+-        # only mark it as removed for now
+-        try:
+-            self.__getitem(key).removed = True
+-        except KeyError:
+-            pass
+         self.__items[key] = item = TLRUCache._Item(key, expires)
+         heapq.heappush(self.__order, item)
+ 

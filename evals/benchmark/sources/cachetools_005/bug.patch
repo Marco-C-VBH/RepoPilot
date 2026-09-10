@@ -1,0 +1,13 @@
+diff --git a/src/cachetools/_cached.py b/src/cachetools/_cached.py
+index 5b09d5a..81c7510 100644
+--- a/src/cachetools/_cached.py
++++ b/src/cachetools/_cached.py
+@@ -239,7 +239,7 @@ def _wrapper(func, cache, key, lock=None, cond=None, info=None):
+         else:
+             wrapper = _unlocked_info(func, cache, key, info)
+     else:
+-        if cache is None:
++        if not cache:
+             wrapper = _uncached(func)
+         elif cond is not None and lock is not None:
+             wrapper = _condition(func, cache, key, lock, cond)

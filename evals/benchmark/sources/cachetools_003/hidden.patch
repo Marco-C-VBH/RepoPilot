@@ -1,0 +1,29 @@
+diff --git a/tests/test_repopilot_cachetools_003.py b/tests/test_repopilot_cachetools_003.py
+new file mode 100644
+index 0000000..40b80f1
+--- /dev/null
++++ b/tests/test_repopilot_cachetools_003.py
+@@ -0,0 +1,23 @@
++from cachetools import LRUCache
++
++
++def test_reading_a_key_protects_it_from_eviction():
++    cache = LRUCache(maxsize=3)
++    cache["a"] = 1
++    cache["b"] = 2
++    cache["c"] = 3
++    assert cache["a"] == 1  # "a" is now the most recently used entry
++    cache["d"] = 4  # must evict the least recently used entry: "b"
++    assert "a" in cache
++    assert "b" not in cache
++    assert sorted(cache) == ["a", "c", "d"]
++
++
++def test_get_counts_as_a_use():
++    cache = LRUCache(maxsize=2)
++    cache["x"] = 1
++    cache["y"] = 2
++    assert cache.get("x") == 1
++    cache["z"] = 3
++    assert "x" in cache
++    assert "y" not in cache

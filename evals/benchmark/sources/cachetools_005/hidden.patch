@@ -1,0 +1,36 @@
+diff --git a/tests/test_repopilot_cachetools_005.py b/tests/test_repopilot_cachetools_005.py
+new file mode 100644
+index 0000000..5a902e7
+--- /dev/null
++++ b/tests/test_repopilot_cachetools_005.py
+@@ -0,0 +1,30 @@
++from cachetools import LRUCache, cached
++
++
++def test_decorated_function_is_cached_after_the_first_call():
++    calls = []
++    cache = LRUCache(maxsize=8)
++
++    @cached(cache)
++    def square(n):
++        calls.append(n)
++        return n * n
++
++    assert square(3) == 9
++    assert square(3) == 9
++    assert calls == [3]
++    assert len(cache) == 1
++
++
++def test_plain_dict_works_as_the_cache():
++    calls = []
++    memo = {}
++
++    @cached(memo)
++    def double(n):
++        calls.append(n)
++        return 2 * n
++
++    assert [double(2), double(2), double(5)] == [4, 4, 10]
++    assert calls == [2, 5]
++    assert len(memo) == 2

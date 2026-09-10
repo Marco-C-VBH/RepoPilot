@@ -1,0 +1,24 @@
+diff --git a/tests/test_repopilot_cachetools_004.py b/tests/test_repopilot_cachetools_004.py
+new file mode 100644
+index 0000000..d17d1e7
+--- /dev/null
++++ b/tests/test_repopilot_cachetools_004.py
+@@ -0,0 +1,18 @@
++from cachetools import Cache, LRUCache
++
++
++def test_cache_can_be_filled_up_to_maxsize():
++    cache = LRUCache(maxsize=3)
++    for key in "abc":
++        cache[key] = key
++    assert len(cache) == 3
++    assert cache.currsize == 3
++    assert set(cache) == {"a", "b", "c"}
++
++
++def test_values_whose_sizes_sum_exactly_to_maxsize_fit():
++    cache = Cache(maxsize=10, getsizeof=lambda value: value)
++    cache["a"] = 4
++    cache["b"] = 6
++    assert len(cache) == 2
++    assert cache.currsize == 10
