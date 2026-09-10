@@ -8,6 +8,29 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 4 · CI red: ruff wanted to reformat a task description
+
+**Date:** 2026-09-10 · **Area:** CI / benchmark data · **Severity:** low
+
+**Symptom.** `ruff format --check` failed on
+`evals/benchmark/sources/cachetools_005/description.md` — a Markdown file. It
+wanted blank lines around the `@cached` function in the Python code fence.
+
+**Root cause.** Recent ruff versions format Python code blocks inside Markdown
+files, and `description.md` is discovered like any other file. But a task
+description is *data*: it is the bug report the agent sees, stored verbatim in
+the task JSON. Rewriting it (even harmlessly) makes the source directory and
+the generated task drift apart, and the formatter has no business editing prose.
+
+**Fix.** `pyproject.toml`: `[tool.ruff] extend-exclude = ["evals/benchmark/sources", "docs"]`.
+Task sources and hand-written docs are never touched by the formatter or the
+linter; code fences there are illustrative and may be deliberately unformatted.
+
+**Guard.** CI. Lesson: when a tool gains a new file type, check that it is not
+now reading directories that hold data.
+
+---
+
 ## 3 · CI red on `ruff format --check` after the runner commit
 
 **Date:** 2026-09-09 · **Area:** CI / tooling · **Severity:** low

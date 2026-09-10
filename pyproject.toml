@@ -35,6 +35,9 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Task sources are data (patches + the bug report an agent sees), not code: newer ruff
+# versions format Python fences inside Markdown and would rewrite descriptions.
+extend-exclude = ["evals/benchmark/sources", "docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
