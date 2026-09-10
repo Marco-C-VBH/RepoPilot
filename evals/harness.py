@@ -10,8 +10,10 @@ benchmark run never aborts halfway.
 
 from __future__ import annotations
 
+import shlex
 import time
 import traceback
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +45,26 @@ def image_spec_for(task: Task) -> ImageSpec:
         install=task.env.install,
         bug_patch=task.bug_patch,
     )
+
+
+def with_hidden_files(test_command: str, hidden_files: Sequence[str]) -> str:
+    """Append hidden test files to a pytest command so they are always collected.
+
+    pytest collects a path given twice only once, so ``pytest tests`` plus
+    ``tests/test_x.py`` is harmless; a command that targets specific files
+    still picks up the hidden ones.
+    """
+    extra = " ".join(shlex.quote(path) for path in hidden_files)
+    return f"{test_command} {extra}".rstrip()
+
+
+def evaluation_test_command(task: Task) -> str:
+    """The task's test command plus its hidden test files.
+
+    ``test_command`` stays usable inside the agent's workspace, where the
+    hidden files do not exist; only the evaluation run sees them.
+    """
+    return with_hidden_files(task.test_command, task.hidden_test_files)
 
 
 @dataclass(frozen=True)
@@ -119,7 +141,9 @@ def evaluate_patch(
                     hidden_tests_applied=False,
                 )
 
-        run = sandbox.run_tests(task.test_command, timeout=task.env.test_timeout_seconds)
+        run = sandbox.run_tests(
+            evaluation_test_command(task), timeout=task.env.test_timeout_seconds
+        )
 
     verdict = judge(run, task.fail_to_pass, task.pass_to_pass)
     return done(

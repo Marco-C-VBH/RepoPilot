@@ -66,14 +66,18 @@ evals/                     RepoPilot-Bench
   benchmark/registry.py    loads and validates evals/benchmark/tasks/<id>.json
   benchmark/task.schema.json   exported JSON Schema (scripts/export_task_schema.py)
   benchmark/examples/      a fully filled-in illustrative task (not runnable)
+  benchmark/sources/<id>/  human-written task sources: task.toml, bug.patch, hidden.patch,
+                           description.md (docs/benchmark-authoring.md)
+  benchmark/authoring.py   source dir -> derived gold patch, symbols, f2p/p2p -> task JSON
   benchmark/tasks/         the benchmark itself, one JSON file per task
   judge.py                 fail_to_pass ∧ pass_to_pass -> Verdict with reason codes
   solvers.py               Solver protocol; `null` and `gold` oracles
   harness.py               build image -> solve -> evaluate in a fresh sandbox -> TaskResult
   runner.py                CLI: results.jsonl, summary.json, per-task logs, --repeat, --expect
 docker/base.Dockerfile     base image for sandbox containers
+docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
-scripts/                   validate_tasks.py, export_task_schema.py
+scripts/                   make_task.py, validate_tasks.py, export_task_schema.py
 tests/                     unit tests (fast) + `-m docker` end-to-end tests
 ```
 
@@ -90,6 +94,15 @@ Two task sources: `real` (the bug already exists at `base_commit`) and `mutation
 agent sees the repository). See `evals/benchmark/schema.py` for every field and the
 invariants the loader enforces, and `evals/benchmark/examples/example_000.json` for
 a complete example.
+
+Tasks are not written by hand. A source directory holds the human parts — the
+mutation as a patch, a hidden regression test, the bug report, a few lines of
+metadata — and `scripts/make_task.py` derives the rest by running the code: the
+gold patch is the exact reverse of the mutation, the localization targets come from
+the patch hunks and the AST, and `fail_to_pass` / `pass_to_pass` come from two
+sandbox runs (buggy vs. fixed, both with the hidden tests). A task whose hidden
+test does not catch the bug, or whose fix breaks an existing test, is refused. See
+`docs/benchmark-authoring.md`.
 
 ## Sandbox
 
@@ -111,6 +124,9 @@ that writes exact node-id outcomes to JSON, so a missing node id is always
 - [x] Runner with `null` and `gold` oracle solvers, `--expect` and `--repeat`
       (`null` → 0/N, `gold` → N/N, repeated runs identical) — verified end to end
       on a fixture task by `uv run pytest -m docker`
-- [ ] 10–20 controlled-mutation tasks on 2–3 small, pure-Python, fast-testing repos
+- [x] Task authoring pipeline (`scripts/make_task.py`, `docs/benchmark-authoring.md`):
+      derived gold patch / symbols / test sets, packaging mistakes rejected up front
+- [ ] 10–20 controlled-mutation tasks on cachetools, toolz and tenacity (pinned
+      commits in `docs/benchmark-authoring.md`), then `null → 0/N`, `gold → N/N ×2`
 
 Phase 1 (baseline agent) starts only after the checklist above is green.

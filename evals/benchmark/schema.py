@@ -39,9 +39,10 @@ COMMIT_PATTERN = r"^[0-9a-f]{40}$"
 PYTHON_VERSION_PATTERN = r"^3\.\d{1,2}$"
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", re.MULTILINE)
-_DIFF_GIT_RE = re.compile(r"^diff --git a/(\S+) b/(\S+)$", re.MULTILINE)
-_OLD_FILE_RE = re.compile(r"^--- (?:a/)?(\S+)", re.MULTILINE)
-_NEW_FILE_RE = re.compile(r"^\+\+\+ (?:b/)?(\S+)", re.MULTILINE)
+_DIFF_GIT_RE = re.compile(r"^diff --git (\S+) (\S+)$", re.MULTILINE)
+_OLD_FILE_RE = re.compile(r"^--- (\S+)", re.MULTILINE)
+_NEW_FILE_RE = re.compile(r"^\+\+\+ (\S+)", re.MULTILINE)
+_PREFIX_RE = re.compile(r"^[ab]/")
 
 
 class TaskSource(StrEnum):
@@ -78,16 +79,32 @@ def looks_like_unified_diff(text: str) -> bool:
 def touched_files(patch: str) -> frozenset[str]:
     """Repository-relative paths a unified diff creates, modifies or deletes.
 
-    Prefers ``diff --git a/<p> b/<p>`` headers (git format); falls back to the
-    ``---``/``+++`` file headers for plain ``diff -u`` output.  ``/dev/null``
-    (file creation / deletion) is never reported as a path.
+    Prefers ``diff --git <old> <new>`` headers (git format, including the
+    swapped ``b/ a/`` prefixes of ``git diff -R`` and ``--no-prefix`` output);
+    falls back to the ``---``/``+++`` file headers for plain ``diff -u``
+    output.  ``/dev/null`` (file creation / deletion) is never reported.
     """
     git_headers = _DIFF_GIT_RE.findall(patch)
     if git_headers:
-        return frozenset(path for pair in git_headers for path in pair)
+        paths: set[str] = set()
+        for old, new in git_headers:
+            if old == new:  # --no-prefix output: the two sides are the bare path
+                paths.add(old)
+            else:
+                paths.update(_strip_prefix(old, new))
+        return frozenset(paths)
     paths = {m.group(1) for regex in (_OLD_FILE_RE, _NEW_FILE_RE) for m in regex.finditer(patch)}
     paths.discard("/dev/null")
-    return frozenset(paths)
+    return frozenset(_PREFIX_RE.sub("", p) for p in paths)
+
+
+def _strip_prefix(old: str, new: str) -> tuple[str, str]:
+    """Drop git's one-component ``a/``/``b/`` (or swapped ``b/``/``a/``) prefixes."""
+    old_prefix, _, old_rest = old.partition("/")
+    new_prefix, _, new_rest = new.partition("/")
+    if old_rest and new_rest and {old_prefix, new_prefix} == {"a", "b"}:
+        return old_rest, new_rest
+    return old, new
 
 
 def _check_repo_relative_path(path: str) -> str:
@@ -278,6 +295,13 @@ class Task(BaseModel):
     def gold_patch_files(self) -> frozenset[str]:
         """Every file the reference fix touches (a superset of ``gold_files``)."""
         return touched_files(self.gold_patch)
+
+    @property
+    def hidden_test_files(self) -> tuple[str, ...]:
+        """Files added by ``hidden_test_patch`` (sorted); empty when there is none."""
+        if not self.hidden_test_patch:
+            return ()
+        return tuple(sorted(touched_files(self.hidden_test_patch)))
 
     @property
     def all_tests(self) -> list[str]:

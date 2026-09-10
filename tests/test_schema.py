@@ -193,6 +193,17 @@ def test_touched_files_ignores_dev_null_in_plain_format() -> None:
     assert touched_files(patch) == {"new.py"}
 
 
+def test_touched_files_handles_reversed_and_prefixless_git_headers() -> None:
+    reversed_prefixes = (
+        "diff --git b/src/a.py a/src/a.py\n--- b/src/a.py\n+++ a/src/a.py\n@@ -1 +1 @@\n-x\n+y\n"
+    )
+    assert touched_files(reversed_prefixes) == {"src/a.py"}
+    no_prefix = "diff --git src/a.py src/a.py\n--- src/a.py\n+++ src/a.py\n@@ -1 +1 @@\n-x\n+y\n"
+    assert touched_files(no_prefix) == {"src/a.py"}
+    plain_reversed = "--- b/src/a.py\n+++ a/src/a.py\n@@ -1 +1 @@\n-x\n+y\n"
+    assert touched_files(plain_reversed) == {"src/a.py"}
+
+
 def test_touched_files_ignores_removed_lines_that_look_like_headers() -> None:
     patch = (
         "diff --git a/q.sql b/q.sql\n--- a/q.sql\n+++ b/q.sql\n"

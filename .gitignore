@@ -19,6 +19,9 @@ results/
 runs/
 .repopilot/
 
+# Scratch clones of target repositories used while authoring tasks
+work/
+
 # Secrets / local config
 .env
 .env.*
