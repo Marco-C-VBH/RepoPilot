@@ -1,0 +1,23 @@
+diff --git a/toolz/tests/test_repopilot_toolz_002.py b/toolz/tests/test_repopilot_toolz_002.py
+new file mode 100644
+index 0000000..4b762c3
+--- /dev/null
++++ b/toolz/tests/test_repopilot_toolz_002.py
+@@ -0,0 +1,17 @@
++from toolz import unique
++
++
++def test_unique_by_key_keeps_the_first_item_of_each_key():
++    words = ['apple', 'avocado', 'banana', 'blueberry', 'cherry', 'apricot']
++    assert tuple(unique(words, key=lambda w: w[0])) == ('apple', 'banana', 'cherry')
++
++
++def test_unique_by_key_when_keys_never_equal_the_items():
++    assert tuple(unique(['A', 'a', 'b', 'B', 'c'], key=str.lower)) == ('A', 'b', 'c')
++    assert tuple(unique([10, 21, 32, 43, 54], key=lambda x: x % 10)) == (10, 21, 32, 43, 54)
++    assert tuple(unique([10, 21, 30, 41, 50], key=lambda x: x % 10)) == (10, 21)
++
++
++def test_unique_by_key_accepts_iterators():
++    it = iter(['aa', 'bb', 'c', 'ddd', 'ee'])
++    assert list(unique(it, key=len)) == ['aa', 'c', 'ddd']

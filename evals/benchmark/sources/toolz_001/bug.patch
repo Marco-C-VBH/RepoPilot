@@ -1,0 +1,13 @@
+diff --git a/toolz/itertoolz.py b/toolz/itertoolz.py
+index 354ecf2..52d579f 100644
+--- a/toolz/itertoolz.py
++++ b/toolz/itertoolz.py
+@@ -668,7 +668,7 @@ def sliding_window(n, seq):
+     [1.5, 2.5, 3.5]
+     """
+     return zip(*(collections.deque(itertools.islice(it, i), 0) or it
+-               for i, it in enumerate(itertools.tee(seq, n))))
++               for i, it in enumerate(itertools.tee(seq, n), 1)))
+ 
+ 
+ no_pad = '__no__pad__'

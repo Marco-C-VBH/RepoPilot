@@ -1,0 +1,13 @@
+diff --git a/toolz/itertoolz.py b/toolz/itertoolz.py
+index 354ecf2..6af8be8 100644
+--- a/toolz/itertoolz.py
++++ b/toolz/itertoolz.py
+@@ -263,7 +263,7 @@ def unique(seq, key=None):
+         for item in seq:
+             val = key(item)
+             if val not in seen:
+-                seen_add(val)
++                seen_add(item)
+                 yield item
+ 
+ 

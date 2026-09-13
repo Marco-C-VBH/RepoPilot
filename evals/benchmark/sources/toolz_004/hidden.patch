@@ -1,0 +1,54 @@
+diff --git a/toolz/tests/test_repopilot_toolz_004.py b/toolz/tests/test_repopilot_toolz_004.py
+new file mode 100644
+index 0000000..579700c
+--- /dev/null
++++ b/toolz/tests/test_repopilot_toolz_004.py
+@@ -0,0 +1,48 @@
++from toolz import memoize
++
++
++def test_memoized_functions_do_not_share_results():
++    @memoize
++    def double(x):
++        return 2 * x
++
++    @memoize
++    def square(x):
++        return x * x
++
++    assert double(21) == 42
++    assert square(21) == 441
++    assert double(21) == 42
++    assert square(21) == 441
++
++
++def test_each_memoized_function_runs_its_own_body_once_per_input():
++    calls = []
++
++    @memoize
++    def add(x, y):
++        calls.append(('add', x, y))
++        return x + y
++
++    @memoize
++    def mul(x, y):
++        calls.append(('mul', x, y))
++        return x * y
++
++    assert add(20, 30) == 50
++    assert mul(20, 30) == 600
++    assert add(20, 30) == 50
++    assert mul(20, 30) == 600
++    assert calls == [('add', 20, 30), ('mul', 20, 30)]
++
++
++def test_memoizing_the_same_function_twice_gives_independent_caches():
++    calls = []
++
++    def inc(x):
++        calls.append(x)
++        return x + 1
++
++    assert memoize(inc)(100) == 101
++    assert memoize(inc)(100) == 101
++    assert calls == [100, 100]

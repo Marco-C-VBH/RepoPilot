@@ -1,0 +1,13 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/toolz_001
+id = "toolz_001"
+repo = "https://github.com/pytoolz/toolz"
+commit = "568c2b8393973cd172a466546c9d95779c452438"
+category = "off_by_one"
+difficulty = "easy"
+test_command = "pytest toolz/tests/test_itertoolz.py toolz/tests/test_curried.py"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

@@ -1,0 +1,23 @@
+diff --git a/toolz/functoolz.py b/toolz/functoolz.py
+index 0468af7..45eb72c 100644
+--- a/toolz/functoolz.py
++++ b/toolz/functoolz.py
+@@ -390,7 +390,7 @@ def _restore_curry(cls, func, args, kwargs, userdict, is_decorated):
+ 
+ 
+ @curry
+-def memoize(func, cache=None, key=None):
++def memoize(func, cache={}, key=None):
+     """ Cache a function's result for speedy future evaluation
+ 
+     Considerations:
+@@ -426,9 +426,6 @@ def memoize(func, cache=None, key=None):
+     ...         print('Calculating %s + %s' % (x, y))
+     ...     return x + y
+     """
+-    if cache is None:
+-        cache = {}
+-
+     try:
+         may_have_kwargs = has_keywords(func) is not False
+         # Is unary function (single arg, no variadic argument or keywords)?

@@ -1,0 +1,26 @@
+diff --git a/toolz/tests/test_repopilot_toolz_001.py b/toolz/tests/test_repopilot_toolz_001.py
+new file mode 100644
+index 0000000..7c0a499
+--- /dev/null
++++ b/toolz/tests/test_repopilot_toolz_001.py
+@@ -0,0 +1,20 @@
++from toolz import sliding_window
++
++
++def test_first_window_starts_at_the_first_element():
++    assert list(sliding_window(2, 'abcde')) == [('a', 'b'), ('b', 'c'), ('c', 'd'), ('d', 'e')]
++    assert list(sliding_window(4, range(6))) == [(0, 1, 2, 3), (1, 2, 3, 4), (2, 3, 4, 5)]
++
++
++def test_window_count_is_len_minus_n_plus_one():
++    seq = list(range(10))
++    for n in range(1, 11):
++        windows = list(sliding_window(n, seq))
++        assert len(windows) == len(seq) - n + 1
++        assert windows[0] == tuple(seq[:n])
++        assert windows[-1] == tuple(seq[-n:])
++
++
++def test_sequence_of_exactly_n_elements_gives_one_window():
++    assert list(sliding_window(3, iter([7, 8, 9]))) == [(7, 8, 9)]
++    assert list(sliding_window(1, [42])) == [(42,)]

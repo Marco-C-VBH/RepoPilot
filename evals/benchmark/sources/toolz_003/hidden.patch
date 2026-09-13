@@ -1,0 +1,27 @@
+diff --git a/toolz/tests/test_repopilot_toolz_003.py b/toolz/tests/test_repopilot_toolz_003.py
+new file mode 100644
+index 0000000..60ff095
+--- /dev/null
++++ b/toolz/tests/test_repopilot_toolz_003.py
+@@ -0,0 +1,21 @@
++from toolz import dissoc
++
++
++def test_dissoc_ignores_a_missing_key():
++    d = {'a': 1, 'b': 2, 'c': 3, 'd': 4}
++    assert dissoc(d, 'z') == d
++    assert dissoc(d, 'a', 'z') == {'b': 2, 'c': 3, 'd': 4}
++    assert dissoc({'x': 1, 'y': 2}, 'z') == {'x': 1, 'y': 2}
++
++
++def test_dissoc_ignores_missing_keys_for_any_dict_size():
++    for size in range(12):
++        d = {i: i for i in range(size)}
++        assert dissoc(d, 'missing') == d
++        assert dissoc(d, 0, 'missing') == {i: i for i in range(1, size)}
++
++
++def test_dissoc_with_a_missing_key_does_not_modify_the_input():
++    d = {'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5}
++    assert dissoc(d, 'a', 'nope') == {'b': 2, 'c': 3, 'd': 4, 'e': 5}
++    assert d == {'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5}
