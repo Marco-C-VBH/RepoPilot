@@ -1,0 +1,45 @@
+diff --git a/tests/test_repopilot_tenacity_004.py b/tests/test_repopilot_tenacity_004.py
+new file mode 100644
+index 0000000..d8b4e48
+--- /dev/null
++++ b/tests/test_repopilot_tenacity_004.py
+@@ -0,0 +1,39 @@
++import pytest
++import tenacity
++
++
++class UpstreamError(Exception):
++    pass
++
++
++def upstream():
++    raise UpstreamError("503 from upstream")
++
++
++def test_try_again_raised_inside_except_surfaces_the_handled_error():
++    @tenacity.retry(stop=tenacity.stop_after_attempt(2), wait=tenacity.wait_none(), reraise=True)
++    def call_upstream():
++        try:
++            upstream()
++        except UpstreamError:
++            raise tenacity.TryAgain  # noqa: B904
++
++    with pytest.raises(UpstreamError) as info:
++        call_upstream()
++    assert str(info.value) == "503 from upstream"
++
++
++def test_try_again_after_handling_work_still_surfaces_the_handled_error():
++    seen = []
++
++    @tenacity.retry(stop=tenacity.stop_after_attempt(3), wait=tenacity.wait_none(), reraise=True)
++    def call_upstream():
++        try:
++            upstream()
++        except UpstreamError as err:
++            seen.append(str(err))
++            raise tenacity.TryAgain  # noqa: B904
++
++    with pytest.raises(UpstreamError):
++        call_upstream()
++    assert seen == ["503 from upstream"] * 3

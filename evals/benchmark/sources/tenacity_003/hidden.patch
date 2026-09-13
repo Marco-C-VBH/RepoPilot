@@ -1,0 +1,47 @@
+diff --git a/tests/test_repopilot_tenacity_003.py b/tests/test_repopilot_tenacity_003.py
+new file mode 100644
+index 0000000..658c34e
+--- /dev/null
++++ b/tests/test_repopilot_tenacity_003.py
+@@ -0,0 +1,41 @@
++import tenacity
++
++
++class TransientError(Exception):
++    pass
++
++
++class Timeout(TransientError):
++    pass
++
++
++def attempts_until_giving_up(exc_type, policy):
++    calls = []
++
++    @tenacity.retry(
++        retry=policy, stop=tenacity.stop_after_attempt(3), wait=tenacity.wait_none(), reraise=True
++    )
++    def failing():
++        calls.append(1)
++        raise exc_type("boom")
++
++    try:
++        failing()
++    except BaseException:
++        pass
++    return len(calls)
++
++
++def test_subclasses_of_a_retried_exception_type_are_retried():
++    policy = tenacity.retry_if_exception_type(TransientError)
++    assert attempts_until_giving_up(Timeout, policy) == 3
++    assert attempts_until_giving_up(TransientError, policy) == 3
++    assert attempts_until_giving_up(ValueError, policy) == 1
++
++
++def test_builtin_hierarchy_and_tuples():
++    assert attempts_until_giving_up(FileNotFoundError, tenacity.retry_if_exception_type(OSError)) == 3
++    policy = tenacity.retry_if_exception_type((KeyError, OSError))
++    assert attempts_until_giving_up(PermissionError, policy) == 3
++    assert attempts_until_giving_up(KeyError, policy) == 3
++    assert attempts_until_giving_up(IndexError, policy) == 1

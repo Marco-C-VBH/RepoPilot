@@ -1,0 +1,13 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/tenacity_004
+id = "tenacity_004"
+repo = "https://github.com/jd/tenacity"
+commit = "a2af454834c6bb5a1e39d67334031cdaf0f475b5"
+category = "exception_handling"
+difficulty = "hard"
+test_command = "pytest tests/test_tenacity.py"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

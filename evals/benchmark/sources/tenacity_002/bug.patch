@@ -1,0 +1,13 @@
+diff --git a/tenacity/wait.py b/tenacity/wait.py
+index 18fb6ea..03160f8 100644
+--- a/tenacity/wait.py
++++ b/tenacity/wait.py
+@@ -202,7 +202,7 @@ class wait_exponential(wait_base):
+         self.exp_base = exp_base
+ 
+     def __call__(self, retry_state: "RetryCallState") -> float:
+-        exponent = retry_state.attempt_number - 1
++        exponent = retry_state.attempt_number
+         if (
+             self.multiplier > 0
+             and self.max > 0

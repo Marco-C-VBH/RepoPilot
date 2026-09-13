@@ -1,0 +1,13 @@
+diff --git a/tenacity/__init__.py b/tenacity/__init__.py
+index 21d7f50..ddb6f64 100644
+--- a/tenacity/__init__.py
++++ b/tenacity/__init__.py
+@@ -190,7 +190,7 @@ class RetryError(Exception):
+             # an "except" block), surface the underlying exception that caused
+             # the retry rather than the opaque TryAgain sentinel.
+             if isinstance(exc, TryAgain):
+-                cause = exc.__cause__ or exc.__context__
++                cause = exc.__cause__
+                 if cause is not None:
+                     raise cause.with_traceback(cause.__traceback__) from None
+             raise self.last_attempt.result()

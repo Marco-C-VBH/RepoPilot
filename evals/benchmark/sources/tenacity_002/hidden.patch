@@ -1,0 +1,25 @@
+diff --git a/tests/test_repopilot_tenacity_002.py b/tests/test_repopilot_tenacity_002.py
+new file mode 100644
+index 0000000..2d9e60b
+--- /dev/null
++++ b/tests/test_repopilot_tenacity_002.py
+@@ -0,0 +1,19 @@
++import tenacity
++from tenacity import Retrying, RetryCallState
++
++
++def state_for_attempt(attempt_number):
++    state = RetryCallState(None, None, (), {})
++    state.attempt_number = attempt_number
++    state.set_result(None)
++    return state
++
++
++def test_first_wait_equals_the_multiplier():
++    r = Retrying(wait=tenacity.wait_exponential(multiplier=1, max=100))
++    assert [r.wait(state_for_attempt(n)) for n in (1, 2, 3, 4)] == [1, 2, 4, 8]
++
++
++def test_custom_multiplier_and_base():
++    r = Retrying(wait=tenacity.wait_exponential(multiplier=0.5, exp_base=3, max=1000))
++    assert [r.wait(state_for_attempt(n)) for n in (1, 2, 3, 4)] == [0.5, 1.5, 4.5, 13.5]

@@ -1,0 +1,16 @@
+diff --git a/tenacity/retry.py b/tenacity/retry.py
+index 61c63d2..e035200 100644
+--- a/tenacity/retry.py
++++ b/tenacity/retry.py
+@@ -111,7 +111,10 @@ class retry_if_exception_type(retry_if_exception):
+         super().__init__(self._check)
+ 
+     def _check(self, e: BaseException) -> bool:
+-        return isinstance(e, self.exception_types)
++        types = self.exception_types
++        if not isinstance(types, tuple):
++            types = (types,)
++        return type(e) in types
+ 
+ 
+ class retry_if_not_exception_type(retry_if_exception):

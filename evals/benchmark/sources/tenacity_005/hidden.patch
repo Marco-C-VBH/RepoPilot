@@ -1,0 +1,26 @@
+diff --git a/tests/test_repopilot_tenacity_005.py b/tests/test_repopilot_tenacity_005.py
+new file mode 100644
+index 0000000..54cd932
+--- /dev/null
++++ b/tests/test_repopilot_tenacity_005.py
+@@ -0,0 +1,20 @@
++import tenacity
++from tenacity import Retrying, RetryCallState
++
++
++def state_for_attempt(attempt_number):
++    state = RetryCallState(None, None, (), {})
++    state.attempt_number = attempt_number
++    state.set_result(None)
++    return state
++
++
++def test_wait_chain_keeps_using_the_last_strategy():
++    chain = tenacity.wait_chain(tenacity.wait_fixed(1), tenacity.wait_fixed(2), tenacity.wait_fixed(3))
++    r = Retrying(wait=chain)
++    assert [r.wait(state_for_attempt(n)) for n in (1, 2, 3, 4, 5, 10)] == [1, 2, 3, 3, 3, 3]
++
++
++def test_wait_chain_with_a_single_strategy_never_fails():
++    r = Retrying(wait=tenacity.wait_chain(tenacity.wait_fixed(7)))
++    assert [r.wait(state_for_attempt(n)) for n in (1, 2, 3, 4)] == [7, 7, 7, 7]

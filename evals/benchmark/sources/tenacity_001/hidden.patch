@@ -1,0 +1,37 @@
+diff --git a/tests/test_repopilot_tenacity_001.py b/tests/test_repopilot_tenacity_001.py
+new file mode 100644
+index 0000000..79c7402
+--- /dev/null
++++ b/tests/test_repopilot_tenacity_001.py
+@@ -0,0 +1,31 @@
++import tenacity
++from tenacity import Retrying, RetryCallState
++
++
++def state_for_attempt(attempt_number):
++    state = RetryCallState(None, None, (), {})
++    state.attempt_number = attempt_number
++    state.set_result(None)
++    return state
++
++
++def test_stop_after_attempt_limits_the_total_number_of_calls():
++    calls = []
++
++    @tenacity.retry(stop=tenacity.stop_after_attempt(3), wait=tenacity.wait_none(), reraise=True)
++    def flaky():
++        calls.append(len(calls) + 1)
++        raise ValueError("still failing")
++
++    try:
++        flaky()
++    except ValueError:
++        pass
++    assert calls == [1, 2, 3]
++
++
++def test_stop_after_attempt_is_true_at_the_limit():
++    r = Retrying(stop=tenacity.stop_after_attempt(2))
++    assert r.stop(state_for_attempt(1)) is False
++    assert r.stop(state_for_attempt(2)) is True
++    assert r.stop(state_for_attempt(5)) is True
