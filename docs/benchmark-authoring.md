@@ -24,7 +24,11 @@ Notes from the survey:
   class; `_cached.py` / `_cachedmethod.py` hold the decorators). Tests are
   unittest-style classes, so node ids look like `tests/test_lru.py::LRUCacheTest::test_lru`.
 - toolz keeps its tests inside the package (`toolz/tests/`). `toolz/tests/test_package.py::test_has_version`
-  needs the package installed, which the sandbox does.
+  needs the package installed, which the sandbox does. Its pytest config turns
+  every warning into an error (`filterwarnings = error`), so a hidden test that
+  triggers a `DeprecationWarning` fails on both sides and `make_task` rejects it.
+  Doctests are only run through `test_curried_doctests.py`, and only for the
+  curried objects, so a docstring example is not a visible test.
 - tenacity's `tests/test_tornado.py` needs tornado; never put it in a
   `test_command` and the plain `pip install -e .` is enough. Avoid tests that use
   real sleeps (grep for `time.sleep`); most of `test_tenacity.py` uses `wait=none`
@@ -142,9 +146,9 @@ what this command collects.
 in git next to the generated JSON — the JSON is the artifact, the directory is the
 audit trail.
 
-## Coverage plan (14 tasks)
+## Coverage (v0: 14 tasks, all built and validated 2026-09-10)
 
-| id | repo | category | difficulty | candidate site |
+| id | repo | category | difficulty | mutation site |
 | --- | --- | --- | --- | --- |
 | cachetools_001 | cachetools | cache_invalidation | medium | `TTLCache` expiry check |
 | cachetools_002 | cachetools | cache_invalidation | hard | `TLRUCache` / `_TimedCache.expire` |
@@ -156,14 +160,19 @@ audit trail.
 | tenacity_003 | tenacity | exception_handling | medium | `retry_if_exception_type` matching |
 | tenacity_004 | tenacity | exception_handling | hard | `Retrying.iter` reraise path |
 | tenacity_005 | tenacity | missing_check | medium | `stop_after_delay` / `wait_chain` bounds |
-| toolz_001 | toolz | off_by_one | easy | `itertoolz.sliding_window` / `take` |
-| toolz_002 | toolz | wrong_condition | medium | `itertoolz.unique` / `isdistinct` |
-| toolz_003 | toolz | missing_check | medium | `dicttoolz.assoc_in` / `get_in` default |
-| toolz_004 | toolz | state_management | hard | `functoolz.memoize` / `curry` cache |
+| toolz_001 | toolz | off_by_one | easy | `itertoolz.sliding_window` window offset |
+| toolz_002 | toolz | wrong_condition | medium | `itertoolz.unique` key bookkeeping |
+| toolz_003 | toolz | missing_check | medium | `dicttoolz.dissoc` missing-key guard |
+| toolz_004 | toolz | state_management | hard | `functoolz.memoize` default cache |
 
-Adjust freely; the constraints that matter are: every category at least once,
-roughly 3 easy / 8 medium / 3 hard, and each repository contributes tasks from
-more than one category.
+The constraints that mattered: every category at least once (`other` is
+deliberately unused), roughly 3 easy / 8 medium / 3 hard, and each repository
+contributing tasks from more than one category. Only two of the fourteen tasks
+(`toolz_003`, `toolz_004`) are caught by the hidden test alone, short of the
+three-to-five target above — the Phase 4 expansion should favour hidden-only
+tasks, which measure reproduction from the description rather than from a red
+test. `tests/test_benchmark_tasks.py` keeps every shipped task consistent with
+its source directory; when a task is regenerated, commit both.
 
 ## Acceptance (Phase 0 exit)
 
@@ -175,4 +184,7 @@ uv run python -m evals.runner --solver gold --expect pass --repeat 2
 Both must exit 0 on the full `evals/benchmark/tasks/` directory: every task fails
 untouched, passes with its reference fix, and gives identical per-test outcomes
 on repeated runs. Record the resulting `summary.json` numbers in the README
-checklist — they describe the harness, not the agent.
+checklist — they describe the harness, not the agent. v0 passed on 2026-09-10:
+`null` 0/14 (all `fail_to_pass_failing`, 21 s), `gold` 28/28 with 14/14 tasks
+deterministic across two repeats (38 s); the README's benchmark section keeps
+the numbers.

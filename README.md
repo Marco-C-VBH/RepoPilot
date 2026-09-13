@@ -10,9 +10,11 @@ The point is not the LLM call. The point is measurement: task success on a
 deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy,
 with every added feature justified by an ablation.
 
-**Status: Phase 0 (evaluation harness) — in progress.** No benchmark numbers yet.
-This README will open with measured results once the harness and the baseline
-agent exist; nothing here will be a placeholder number.
+**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) next.**
+RepoPilot-Bench v0 has 14 deterministic tasks and the harness passes its own
+acceptance test (see [the benchmark](#repopilot-bench-v0)). There are no agent
+results yet: this README will open with measured results once the baseline agent
+exists, and nothing here will be a placeholder number.
 
 ## Setup
 
@@ -50,6 +52,56 @@ judges the returned patch in a fresh container, so a solver's own workspace can
 never influence the verdict. The Phase 1 baseline agent will be one more entry in
 `evals/solvers.py`.
 
+## RepoPilot-Bench v0
+
+14 controlled-mutation tasks on three small, pure-Python libraries pinned to one
+commit each (cachetools 7.1.8, toolz 1.1.0, tenacity 9.2.0). Every task is a
+small bug injected into the library (at most six changed lines in the diff), a
+bug report written from the outside
+(what a user would observe, never the fix), and a hidden regression test that the
+agent never sees. `fail_to_pass` lists the tests a fix must turn green — the
+hidden ones plus whatever existing tests the bug already breaks — and
+`pass_to_pass` is everything else the task's test command collects.
+
+| id | category | difficulty | mutation site | fail_to_pass (visible + hidden) | pass_to_pass |
+| --- | --- | --- | --- | --- | --- |
+| cachetools_001 | cache_invalidation | medium | `TTLCache.expire` | 2 + 2 | 56 |
+| cachetools_002 | cache_invalidation | hard | `TLRUCache.__setitem__` | 1 + 2 | 64 |
+| cachetools_003 | state_management | medium | `LRUCache.__getitem__` | 2 + 2 | 52 |
+| cachetools_004 | off_by_one | easy | `Cache.__setitem__` | 28 + 2 | 22 |
+| cachetools_005 | wrong_condition | medium | `cached()` wrapper | 20 + 2 | 54 |
+| tenacity_001 | retry_logic | easy | `stop_after_attempt.__call__` | 23 + 2 | 112 |
+| tenacity_002 | retry_logic | medium | `wait_exponential.__call__` | 8 + 2 | 127 |
+| tenacity_003 | exception_handling | medium | `retry_if_exception_type._check` | 12 + 2 | 123 |
+| tenacity_004 | exception_handling | hard | `RetryError.reraise` | 1 + 2 | 134 |
+| tenacity_005 | missing_check | medium | `wait_chain.__call__` | 2 + 2 | 133 |
+| toolz_001 | off_by_one | easy | `sliding_window` | 1 + 3 | 59 |
+| toolz_002 | wrong_condition | medium | `unique` | 1 + 3 | 59 |
+| toolz_003 | missing_check | medium | `dissoc` | 0 + 3 | 57 |
+| toolz_004 | state_management | hard | `memoize` | 0 + 3 | 48 |
+
+Seven categories, each twice; 3 easy / 8 medium / 3 hard. Twelve tasks have at
+least one existing test that fails with the bug, so an agent can reproduce them by
+running the suite; two (`toolz_003`, `toolz_004`) are caught only by the hidden
+test and must be reproduced from the description. Difficulty is set by how much
+the description gives away, not by patch size — every gold patch is tiny.
+
+**Harness acceptance (2026-09-10, MacBook Air / Docker Desktop, one container
+per run):**
+
+| run | result | wall time |
+| --- | --- | --- |
+| `--solver null --expect fail` | 0 / 14 pass, every failure `fail_to_pass_failing` | 21 s |
+| `--solver gold --expect pass --repeat 2` | 28 / 28 pass, per-test outcomes identical across repeats (14 / 14) | 38 s |
+
+These numbers describe the harness, not an agent: a null solver must fail every
+task, the reference fix must pass every task, and nothing may be flaky. The
+first agent numbers will come from Phase 1.
+
+The audit trail for every task is its source directory
+(`evals/benchmark/sources/<id>/`), and `tests/test_benchmark_tasks.py` fails the
+unit suite if a task JSON ever drifts from its sources.
+
 ## Layout
 
 ```
@@ -78,7 +130,8 @@ docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
 scripts/                   make_task.py, validate_tasks.py, export_task_schema.py
-tests/                     unit tests (fast) + `-m docker` end-to-end tests
+tests/                     unit tests (fast) + `-m docker` end-to-end tests;
+                           test_benchmark_tasks.py checks the shipped tasks against their sources
 ```
 
 ## Task format
@@ -126,7 +179,10 @@ that writes exact node-id outcomes to JSON, so a missing node id is always
       on a fixture task by `uv run pytest -m docker`
 - [x] Task authoring pipeline (`scripts/make_task.py`, `docs/benchmark-authoring.md`):
       derived gold patch / symbols / test sets, packaging mistakes rejected up front
-- [ ] 10–20 controlled-mutation tasks on cachetools, toolz and tenacity (pinned
-      commits in `docs/benchmark-authoring.md`), then `null → 0/N`, `gold → N/N ×2`
+- [x] 10–20 controlled-mutation tasks on cachetools, toolz and tenacity (pinned
+      commits in `docs/benchmark-authoring.md`): 14 tasks, `null → 0/14`,
+      `gold → 28/28` over two repeats with identical per-test outcomes (2026-09-10)
 
-Phase 1 (baseline agent) starts only after the checklist above is green.
+Phase 0 is complete. Phase 1 (baseline agent: a deliberately simple
+read / search / patch / test loop, registered as a solver and run on the 14 tasks
+to produce the first real success-rate, cost and latency numbers) is next.

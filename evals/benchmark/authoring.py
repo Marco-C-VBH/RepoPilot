@@ -49,6 +49,7 @@ from repopilot.sandbox.limits import DEFAULT_LIMITS, SandboxLimits
 from repopilot.sandbox.repo import DEFAULT_CACHE_DIR, export_tree
 from repopilot.sandbox.results import TestOutcome, TestRun
 
+SOURCES_DIR = Path(__file__).resolve().parent / "sources"
 REQUIRED_FILES = ("task.toml", "bug.patch", "description.md")
 HIDDEN_PATCH_FILE = "hidden.patch"
 REQUIRED_KEYS = ("id", "repo", "commit", "category", "difficulty", "test_command")
