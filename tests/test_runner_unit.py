@@ -129,3 +129,28 @@ def test_build_solver_checks_keys_for_the_baseline(
     solver = runner.build_solver(args)
     assert isinstance(solver, BaselineSolver)
     assert solver.model == "gpt-5.6-luna" and solver.budget.max_steps == 7
+
+
+def test_archive_run_copies_summary_results_and_traces(tmp_path: Path) -> None:
+    from scripts.archive_run import archive
+
+    run_dir = tmp_path / "results" / "baseline-x"
+    (run_dir / "traces").mkdir(parents=True)
+    (run_dir / "logs").mkdir()
+    (run_dir / "summary.json").write_text(
+        json.dumps({"solver": "baseline", "tasks": 1, "repeat": 1, "pass_rate": 1.0}),
+        encoding="utf-8",
+    )
+    (run_dir / "results.jsonl").write_text(
+        make_result("a_001", Status.PASS).model_dump_json() + "\n"
+    )
+    (run_dir / "traces" / "a_001.jsonl").write_text('{"seq": 0, "kind": "run_start"}\n')
+    (run_dir / "logs" / "a_001.log").write_text("noise\n")
+
+    target = archive(run_dir, "demo", out_root=tmp_path / "experiments")
+    assert sorted(p.name for p in target.iterdir()) == ["results.jsonl", "summary.json", "traces"]
+    assert (target / "traces" / "a_001.jsonl").read_text().startswith('{"seq": 0')
+    assert json.loads((target / "summary.json").read_text())["archived_from"] == str(run_dir)
+    with pytest.raises(SystemExit, match="exists"):
+        archive(run_dir, "demo", out_root=tmp_path / "experiments")
+    archive(run_dir, "demo", out_root=tmp_path / "experiments", force=True)

@@ -10,11 +10,32 @@ The point is not the LLM call. The point is measurement: task success on a
 deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy,
 with every added feature justified by an ablation.
 
-**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — built,
-first benchmark run pending.** RepoPilot-Bench v0 has 14 deterministic tasks and
-the harness passes its own acceptance test (see [the benchmark](#repopilot-bench-v0)).
-There are no agent results yet: this README will open with measured results once
-the baseline has run, and nothing here will be a placeholder number.
+**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done,
+first results below.** Every number here is measured by a run archived under
+`evals/experiments/`; nothing is a placeholder.
+
+## Results so far
+
+| configuration | benchmark | success | median cost / task | median time | steps |
+| --- | --- | --- | --- | --- | --- |
+| baseline: `claude-sonnet-5`, plain tool loop, spec §9.1 budget | RepoPilot-Bench v0 (14 tasks) | **14 / 14** | $0.045 | 16 s | 6.2 |
+
+Single run, 2026-09-14 (`evals/experiments/baseline-v0-sonnet5/`): 100% success,
+100% patch rate, 0% regressions, $0.79 for the whole run, invalid tool-call rate
+1.3%, p95 solve time 23 s, every run ended with the model stopping on its own —
+no task came near the budget (max context 9.5k tokens, max spend $0.13).
+
+That is the first finding of Phase 1, and it is about the benchmark, not the
+agent: **v0 is saturated.** Its tasks are single-site mutations in small
+libraries, and even the "hard" bug reports carry the name of the class or
+decorator involved, so `search_symbol` on a name from the report lands on the
+right function in one call (traces: the first tool call was a symbol lookup or a
+direct read in 14 / 14 runs; the two hidden-only tasks passed without the agent
+ever seeing a failing test). A benchmark the baseline completes cannot show what
+structured runtime or hybrid retrieval add, so the next work is v1: bug reports
+audited for leaked identifiers, larger repositories, mutations whose symptom
+surfaces in a different module than the cause, and cheaper models as a second
+axis (see [Phase 1 findings](#phase-1-findings)).
 
 ## Setup
 
@@ -127,6 +148,38 @@ read or edited a gold file: `retrieval_failure`, `reasoning_failure`,
 The taxonomy is heuristic and exists to point at the highest-leverage problem, not
 to be ground truth.
 
+### Phase 1 findings
+
+What the 14 traces of the first run say (`evals/experiments/baseline-v0-sonnet5/traces/`):
+
+- **Localization is free on v0.** 12 of 14 runs opened with `search_symbol(<name
+  from the bug report>)`, the other two with a direct `read_file` / `search_code`
+  on a term from the report; the first file read was a gold file in 13 / 14
+  (`cachetools_005` read `__init__.py` first, then followed `cached` to the nested
+  `_wrapper` in `_cached.py`: 5 reads across 3 files, 10 steps). The difficulty
+  tiers only vary how much *behaviour* the report describes — the identifiers
+  leak the location regardless.
+- **Iteration barely happens.** 10 of 14 runs made exactly one edit and ran the
+  tests once; three more only ran a narrower target first or split the fix into
+  two edits. The one real correction loop was `cachetools_003`: the first edit
+  broke `test_missing_getsizeof`, the agent read `Cache.__getitem__` and fixed it
+  (11 steps, 2 test runs).
+- **Budgets never bind.** Median 18.7k total tokens and $0.045; the most expensive
+  run was 58.9k tokens / $0.13 (`cachetools_005`) and the slowest 36 s
+  (`cachetools_003`), against caps of 100k / $0.50 / 600 s. 87% of solve time is
+  model latency (~1.5 s per call); tool calls take milliseconds except `run_tests`
+  (0.5–3 s).
+- **The tool contract held.** One invalid call in 75 (`read_file` with
+  `start="80, 130"`), rejected with a message the model recovered from on the next
+  step; no test-file edits attempted; no patch failed to apply.
+
+Consequences: success rate on v0 cannot discriminate agent designs, so the
+Phase 2 / 3 comparisons need (1) **RepoPilot-Bench v1** — reports without leaked
+identifiers, repositories an order of magnitude larger, cross-module symptoms,
+more hidden-only tasks — and (2) a **second model tier** (`claude-haiku-4-5`,
+`gpt-5.6-luna`) where scaffolding differences may show up at fixed model
+strength. Efficiency (tokens, cost, latency) remains measurable on v0 either way.
+
 ## RepoPilot-Bench v0
 
 14 controlled-mutation tasks on three small, pure-Python libraries pinned to one
@@ -219,7 +272,9 @@ evals/                     RepoPilot-Bench
 docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
-scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py
+evals/experiments/         archived runs behind the numbers in this README (summary, results, traces)
+scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py,
+                           archive_run.py (results/<run> -> evals/experiments/<name>)
 tests/                     unit tests (fast) + `-m docker` end-to-end tests;
                            test_benchmark_tasks.py checks the shipped tasks against their sources
 ```

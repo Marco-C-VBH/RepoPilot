@@ -18,7 +18,19 @@ KEY_PATTERNS = [
     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),  # Anthropic
     re.compile(r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}"),  # OpenAI
 ]
-TEXT_SUFFIXES = {".py", ".toml", ".md", ".json", ".yml", ".yaml", ".txt", ".cfg", ".patch", ".sh"}
+TEXT_SUFFIXES = {
+    ".py",
+    ".toml",
+    ".md",
+    ".json",
+    ".jsonl",
+    ".yml",
+    ".yaml",
+    ".txt",
+    ".cfg",
+    ".patch",
+    ".sh",
+}
 
 
 def tracked_text_files() -> list[Path]:
