@@ -16,26 +16,46 @@ first results below.** Every number here is measured by a run archived under
 
 ## Results so far
 
-| configuration | benchmark | success | median cost / task | median time | steps |
-| --- | --- | --- | --- | --- | --- |
-| baseline: `claude-sonnet-5`, plain tool loop, spec §9.1 budget | RepoPilot-Bench v0 (14 tasks) | **14 / 14** | $0.045 | 16 s | 6.2 |
+The baseline agent (a plain tool-calling loop, no runtime controls, no
+retrieval beyond grep and an `ast` symbol table) on RepoPilot-Bench v0 (14
+controlled-mutation tasks), every configuration under the spec §9.1 budget
+(30 steps, 40 tool calls, 5 test runs, 100k tokens, $0.50, 600 s per task):
 
-Single run, 2026-09-14 (`evals/experiments/baseline-v0-sonnet5/`): 100% success,
-100% patch rate, 0% regressions, $0.79 for the whole run, invalid tool-call rate
-1.3%, p95 solve time 23 s, every run ended with the model stopping on its own —
-no task came near the budget (max context 9.5k tokens, max spend $0.13).
+| model | runs | success | steps | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | invalid tool calls |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-sonnet-5` | 3 × 14 | **42 / 42** | 5.9 | 18.3k | $0.044 | 14 s | 0 | 1.4% |
+| `gpt-5.6-luna` | 1 × 14 | **14 / 14** | 7.7 | 33.7k | $0.003 | 18 s | 0 | 8.3% |
+| `claude-haiku-4-5` | 1 × 14 | **11 / 14** | 14.3 | 90.8k | $0.105 | 27 s | 6 / 14 | 0.0% |
 
-That is the first finding of Phase 1, and it is about the benchmark, not the
-agent: **v0 is saturated.** Its tasks are single-site mutations in small
-libraries, and even the "hard" bug reports carry the name of the class or
-decorator involved, so `search_symbol` on a name from the report lands on the
-right function in one call (traces: the first tool call was a symbol lookup or a
-direct read in 14 / 14 runs; the two hidden-only tasks passed without the agent
-ever seeing a failing test). A benchmark the baseline completes cannot show what
-structured runtime or hybrid retrieval add, so the next work is v1: bug reports
-audited for leaked identifiers, larger repositories, mutations whose symptom
-surfaces in a different module than the cause, and cheaper models as a second
-axis (see [Phase 1 findings](#phase-1-findings)).
+Runs of 2026-09-14, archived under `evals/experiments/baseline-v0-*/`. Sonnet's
+three runs (one single, one `--repeat 2`) gave identical verdicts on every task;
+trajectories vary (7 / 10 / 8 steps on `cachetools_001`).
+
+Two findings, both about what v0 can and cannot measure:
+
+1. **Success rate on v0 is saturated for capable models.** The tasks are
+   single-site mutations in small libraries, and even the "hard" bug reports
+   carry the name of the class or decorator involved, so `search_symbol` on a
+   name from the report lands on the right function in one call (Sonnet: 12 / 14
+   runs opened that way, the two hidden-only tasks passed without the agent ever
+   seeing a failing test). A benchmark the baseline completes cannot show what
+   hybrid retrieval adds; that needs **Bench v1** (reports audited for leaked
+   identifiers, larger repositories, symptoms in a different module than the
+   cause, more hidden-only tasks).
+2. **Efficiency under a fixed budget is not saturated, and the weaker model shows
+   where a runtime would help.** Haiku spent 5× Sonnet's tokens per task (5.4
+   file reads per task vs 1.5; it re-reads test files and keeps searching after it
+   has the answer), hit the 100k-token cap in 6 of 14 runs, and all three of its
+   failures were *analysis without an edit* — `tenacity_004`'s trace ends with the
+   correct diagnosis written out and no `edit_file` call. Three of its passes
+   also ended on the cap after the tests were already green. Luna's only errors
+   were 12 calls to `edit_file` with an invented argument name (`replacement`),
+   one per task, each repaired on the next step. Explicit termination on green
+   tests, repeat detection and tool-argument validation (spec §5, Phase 2) have
+   measurable targets on v0 today: budget terminations, wasted steps after
+   success, invalid-call rate, tokens per task.
+
+Details in [Phase 1 findings](#phase-1-findings).
 
 ## Setup
 
@@ -173,12 +193,36 @@ What the 14 traces of the first run say (`evals/experiments/baseline-v0-sonnet5/
   `start="80, 130"`), rejected with a message the model recovered from on the next
   step; no test-file edits attempted; no patch failed to apply.
 
-Consequences: success rate on v0 cannot discriminate agent designs, so the
-Phase 2 / 3 comparisons need (1) **RepoPilot-Bench v1** — reports without leaked
-identifiers, repositories an order of magnitude larger, cross-module symptoms,
-more hidden-only tasks — and (2) a **second model tier** (`claude-haiku-4-5`,
-`gpt-5.6-luna`) where scaffolding differences may show up at fixed model
-strength. Efficiency (tokens, cost, latency) remains measurable on v0 either way.
+Across models (`evals/experiments/baseline-v0-haiku45/`, `baseline-v0-luna/`):
+
+- **Haiku 4.5 (11 / 14).** 14.3 steps and 90.8k tokens per task against Sonnet's
+  5.9 and 18.3k: 5.4 file reads per task, many of them test files, and searches
+  repeated after the answer was in context (`tenacity_003`: 11 search calls, no
+  edit). Six runs ended on the 100k-token cap. Three of those had already produced
+  a correct patch and kept exploring (`toolz_003`: tests green at step 13, eight
+  more steps of reading); the three failures never called `edit_file` at all, and
+  in `tenacity_004` the final message states the exact fix. Cost per task ($0.105)
+  ended up *higher* than Sonnet's despite the lower price per token, because the
+  loop resends the whole history every step — cumulative tokens grow with the
+  square of the trajectory length.
+- **gpt-5.6-luna (14 / 14, $0.003 per task).** Fewer steps than Sonnet but more
+  tool calls (1.3 per step; it issues parallel calls) and one invented argument
+  per task: `edit_file(..., replacement=...)` instead of `new_string`, rejected by
+  the validator and corrected on the next step — 12 of its 144 calls, the 8.3%
+  invalid rate. The schemas are sent without OpenAI's strict mode, so this is
+  exactly the kind of error runtime tool validation should absorb.
+- **Statistical caveat.** With 14 tasks one task is 7 points; Haiku's 78.6% has a
+  95% interval of roughly 52–93%. Verdict-level comparisons on v0 need repeats,
+  and success-rate claims need the larger v1. Token, step and termination
+  metrics are far less noisy and already separate the three models cleanly.
+
+Consequences, in order: (1) **Phase 2 (structured runtime)** can be evaluated on
+v0 now — the treatment arm is measured against this baseline on the same three
+models, with success-under-budget for Haiku, budget terminations, steps after the
+tests go green, invalid-call rate and tokens per task as the outcomes; (2)
+**Bench v1** (reports without leaked identifiers, repositories an order of
+magnitude larger, cross-module symptoms, more hidden-only tasks, 30+ tasks) is
+required before the retrieval work of Phase 3 can show anything on success rate.
 
 ## RepoPilot-Bench v0
 

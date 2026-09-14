@@ -1,0 +1,105 @@
+{
+  "run_id": "baseline-20260914-064931-d7ae",
+  "solver": "baseline",
+  "tasks": 14,
+  "repeat": 1,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 3,
+    "PASS": 11
+  },
+  "pass_rate": 0.7857,
+  "deterministic": null,
+  "nondeterministic_tasks": [],
+  "duration_seconds": 437.925,
+  "started_at": "2026-09-14T10:49:31+00:00",
+  "finished_at": "2026-09-14T10:56:49+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/baseline-20260914-064931-d7ae",
+  "model": "claude-haiku-4-5-20251001",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "agent": {
+    "results": 14,
+    "success_rate": 0.7857,
+    "patch_rate": 0.7857,
+    "regression_rate": 0.0,
+    "avg_steps": 14.286,
+    "avg_tool_calls": 13.857,
+    "avg_test_runs": 2.786,
+    "invalid_tool_call_rate": 0.0,
+    "terminations": {
+      "done": 8,
+      "budget_tokens": 6
+    },
+    "tokens_mean": 78669,
+    "tokens_median": 90754,
+    "cost_total_usd": 1.2249,
+    "cost_mean_usd": 0.087,
+    "cost_median_usd": 0.1046,
+    "solve_p50_seconds": 26.7,
+    "solve_p95_seconds": 38.4,
+    "failures": {
+      "budget_exceeded": 3
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 2,
+        "total": 2
+      },
+      "exception_handling": {
+        "pass": 0,
+        "total": 2
+      },
+      "missing_check": {
+        "pass": 2,
+        "total": 2
+      },
+      "off_by_one": {
+        "pass": 2,
+        "total": 2
+      },
+      "retry_logic": {
+        "pass": 2,
+        "total": 2
+      },
+      "state_management": {
+        "pass": 2,
+        "total": 2
+      },
+      "wrong_condition": {
+        "pass": 1,
+        "total": 2
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "pass": 3,
+        "total": 3
+      },
+      "hard": {
+        "pass": 2,
+        "total": 3
+      },
+      "medium": {
+        "pass": 6,
+        "total": 8
+      }
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/baseline-20260914-064931-d7ae"
+}
