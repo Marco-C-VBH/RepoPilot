@@ -93,3 +93,39 @@ def test_load_results_reads_jsonl(tmp_path: Path) -> None:
     rows = [make_result("a_001", Status.PASS), make_result("b_002", Status.FAIL)]
     path.write_text("".join(r.model_dump_json() + "\n" for r in rows), encoding="utf-8")
     assert runner.load_results(path) == rows
+
+
+def test_budget_flags_override_defaults() -> None:
+    args = runner.build_parser().parse_args(
+        ["--solver", "baseline", "--max-steps", "5", "--max-cost", "0.1", "--max-run-cost", "3"]
+    )
+    budget = runner.budget_from_args(args)
+    assert budget.max_steps == 5 and budget.max_cost_usd == 0.1
+    assert budget.max_tool_calls == 40 and budget.max_runtime_seconds == 600  # untouched defaults
+    assert args.max_run_cost == 3.0
+
+
+def test_build_solver_checks_keys_for_the_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evals.solvers import BaselineSolver, NullSolver
+    from repopilot.models.config import ConfigError
+
+    parser = runner.build_parser()
+    assert isinstance(runner.build_solver(parser.parse_args(["--solver", "null"])), NullSolver)
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    args = parser.parse_args(
+        ["--solver", "baseline", "--model", "gpt-5.6-luna", "--env-file", str(tmp_path / "none")]
+    )
+    with pytest.raises(ConfigError, match="OPENAI_API_KEY"):
+        runner.build_solver(args)
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    args = parser.parse_args(
+        ["--solver", "baseline", "--model", "gpt-5.6-luna", "--max-steps", "7", "--env-file", "x"]
+    )
+    solver = runner.build_solver(args)
+    assert isinstance(solver, BaselineSolver)
+    assert solver.model == "gpt-5.6-luna" and solver.budget.max_steps == 7

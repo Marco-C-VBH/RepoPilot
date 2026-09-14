@@ -27,6 +27,7 @@ from tests.fixture_repo import (
     HIDDEN,
     INSIDE,
     UNAPPLIABLE_PATCH,
+    UNAPPLIABLE_SOURCE_PATCH,
     WRONG_PATCH,
     create_fixture_repo,
     fixture_task_dict,
@@ -147,14 +148,29 @@ def test_unappliable_patch_is_reported_not_raised(task: Task, image: str) -> Non
         name = "broken"
 
         def solve(self, task: Task, image: str) -> str | None:
-            return UNAPPLIABLE_PATCH
+            return UNAPPLIABLE_SOURCE_PATCH
 
     result, _ = run_task(task, BrokenSolver())
     assert result.status is Status.FAIL
     assert result.reasons == [Reason.PATCH_APPLY_FAILED]
     assert result.patch_applied is False
-    assert result.detail and "test_missing.py" in result.detail
+    assert result.detail and "fixturepkg/missing.py" in result.detail
     assert result.fail_to_pass == {} and result.test_counts == {}
+
+
+def test_test_only_patch_is_stripped_before_judging(task: Task, image: str) -> None:
+    class TestEditingSolver:
+        name = "test-editor"
+
+        def solve(self, task: Task, image: str) -> str | None:
+            return UNAPPLIABLE_PATCH  # touches tests/test_missing.py only
+
+    result, log = run_task(task, TestEditingSolver())
+    assert result.patch_test_files == ["tests/test_missing.py"]
+    assert result.patch_applied is None  # nothing left to apply once tests are stripped
+    assert result.status is Status.FAIL
+    assert result.reasons == [Reason.FAIL_TO_PASS_FAILING]
+    assert "test-file edits stripped before judging: tests/test_missing.py" in log
 
 
 def test_crashing_solver_is_an_error_not_a_crash(task: Task, image: str) -> None:

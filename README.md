@@ -10,11 +10,11 @@ The point is not the LLM call. The point is measurement: task success on a
 deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy,
 with every added feature justified by an ablation.
 
-**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) next.**
-RepoPilot-Bench v0 has 14 deterministic tasks and the harness passes its own
-acceptance test (see [the benchmark](#repopilot-bench-v0)). There are no agent
-results yet: this README will open with measured results once the baseline agent
-exists, and nothing here will be a placeholder number.
+**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — built,
+first benchmark run pending.** RepoPilot-Bench v0 has 14 deterministic tasks and
+the harness passes its own acceptance test (see [the benchmark](#repopilot-bench-v0)).
+There are no agent results yet: this README will open with measured results once
+the baseline has run, and nothing here will be a placeholder number.
 
 ## Setup
 
@@ -86,8 +86,46 @@ between repeats is flaky.
 
 A solver is anything with `solve(task, image) -> patch | None`; the harness always
 judges the returned patch in a fresh container, so a solver's own workspace can
-never influence the verdict. The Phase 1 baseline agent will be one more entry in
-`evals/solvers.py`.
+never influence the verdict. Any section of a candidate patch that touches a test
+file is stripped before judging and recorded (`patch_test_files`): the benchmark's
+own tests decide, so editing them can only hide a bug.
+
+## The baseline agent (Phase 1)
+
+`--solver baseline` runs `repopilot/agent/baseline.py`: a plain tool-calling loop
+— system prompt, bug report, then *model → tools → results* until the model
+stops or the budget is spent. No planning phase, no state machine, no loop
+detection, no context compaction: it is the unconstrained end of the
+architecture ablation (spec §12.2), and every later phase is measured against it.
+
+```bash
+uv run python -m evals.runner --solver baseline --ids cachetools_004 --max-run-cost 2   # one task
+uv run python -m evals.runner --solver baseline --max-run-cost 10                       # all tasks
+uv run python -m evals.runner --solver baseline --model gpt-5.6-terra --max-steps 20    # variations
+```
+
+The agent works on a host-side git checkout of the buggy tree (`repopilot/tools/`)
+through six typed tools — `search_code`, `search_symbol`, `find_references`,
+`read_file`, `edit_file`, `run_tests` — and only `run_tests` touches the sandbox:
+the workspace diff is applied to a fresh copy of the tree in the container and
+pytest runs there. The final diff is the candidate patch. Every task runs under
+the same budget (spec §9.1: 30 model calls, 40 tool calls, 5 test runs, 100k
+tokens, $0.50, 600 s by default; `--max-*` flags change it for a whole run), and
+`--max-run-cost` caps the spend of the entire benchmark run.
+
+Each task leaves a trace (`results/<run>/traces/<task>.jsonl`, spec §13.1): the
+run's metadata, every model call with tokens / latency / cost, every tool call
+with arguments, duration, result and errors, the final patch, the budget state and
+the termination reason. `summary.json` adds an `agent` block (spec §11.1): success,
+patch and regression rates, steps / tool calls / test runs, invalid-tool-call
+rate, tokens, cost (median and total), solve latency p50 / p95, termination
+counts, success by category and difficulty — and a first-cut failure taxonomy
+(spec §11.2) derived from the verdict, the termination and whether the agent ever
+read or edited a gold file: `retrieval_failure`, `reasoning_failure`,
+`wrong_localization`, `incorrect_patch`, `regression_introduced`,
+`budget_exceeded`, `test_misunderstanding`, `tool_failure`, `environment_failure`.
+The taxonomy is heuristic and exists to point at the highest-leverage problem, not
+to be ground truth.
 
 ## RepoPilot-Bench v0
 
@@ -147,6 +185,14 @@ repopilot/                 library
   models/client.py         AnthropicClient, OpenAIClient, FakeClient; client_for(model)
   models/config.py         ModelSettings (strong / cheap), key lookup, .env loading
   models/pricing.py        $/MTok table -> estimate_cost; models/ledger.py totals + budget caps
+  tools/workspace.py       host-side git working copy of the buggy tree (edits live here)
+  tools/code.py            read_file, search_code, search_symbol (ast index), find_references, edit_file
+  tools/toolbox.py         the six tool schemas the model sees + dispatch/validation + run_tests
+                           (workspace diff -> sandbox -> per-test summary)
+  agent/budget.py          AgentBudget (spec §9.1) + BudgetTracker
+  agent/prompts.py         system prompt and task prompt of the baseline
+  agent/baseline.py        BaselineAgent: the budgeted tool loop -> AgentRun (metrics, patch, trace)
+  tracing/events.py        Trace: JSONL events (model_call, tool_call, patch, run_end)
   sandbox/limits.py        resource limits applied to every sandbox container
   sandbox/repo.py          host-side checkout of a repo at a commit (mirror cache, no .git)
   sandbox/docker.py        per-task image build + Sandbox container (exec / apply_patch /
@@ -164,9 +210,12 @@ evals/                     RepoPilot-Bench
   benchmark/authoring.py   source dir -> derived gold patch, symbols, f2p/p2p -> task JSON
   benchmark/tasks/         the benchmark itself, one JSON file per task
   judge.py                 fail_to_pass ∧ pass_to_pass -> Verdict with reason codes
-  solvers.py               Solver protocol; `null` and `gold` oracles
+  solvers.py               Solver protocol; `null` and `gold` oracles; `baseline` agent solver
   harness.py               build image -> solve -> evaluate in a fresh sandbox -> TaskResult
-  runner.py                CLI: results.jsonl, summary.json, per-task logs, --repeat, --expect
+                           (+ agent record, trace file, test-file edits stripped from patches)
+  metrics.py               agent metrics (spec §11.1) and the failure taxonomy (spec §11.2)
+  runner.py                CLI: results.jsonl, summary.json, logs/, traces/, --repeat, --expect,
+                           --model and --max-* budget flags, --max-run-cost
 docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard

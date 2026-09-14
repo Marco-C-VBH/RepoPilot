@@ -17,12 +17,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-from evals.benchmark.schema import Task
+from evals.benchmark.schema import Task, touched_files
 from evals.judge import Reason, Status, Verdict, judge
 from evals.solvers import Solver
+from repopilot.agent.baseline import AgentRun
 from repopilot.sandbox.docker import (
     DockerError,
     ImageBuildError,
@@ -33,6 +35,7 @@ from repopilot.sandbox.docker import (
 from repopilot.sandbox.limits import DEFAULT_LIMITS, SandboxLimits
 from repopilot.sandbox.repo import DEFAULT_CACHE_DIR, RepoError
 from repopilot.sandbox.results import TestRun
+from repopilot.tools.paths import is_test_path
 
 _DETAIL_LIMIT = 4000
 
@@ -67,6 +70,37 @@ def evaluation_test_command(task: Task) -> str:
     return with_hidden_files(task.test_command, task.hidden_test_files)
 
 
+def split_patch(patch: str) -> list[tuple[str, str]]:
+    """A git-format patch -> ``(path, block)`` per ``diff --git`` section."""
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("diff --git ") and current:
+            blocks.append("".join(current))
+            current = []
+        current.append(line)
+    if current:
+        blocks.append("".join(current))
+    return [(next(iter(sorted(touched_files(b))), ""), b) for b in blocks]
+
+
+def strip_test_files(patch: str) -> tuple[str, list[str]]:
+    """Drop the sections of a candidate patch that touch test files.
+
+    The benchmark judges a fix with the task's own tests, so an edit to the
+    suite can only hide a bug; it is removed before judging and reported in
+    ``TaskResult.patch_test_files`` (the tool layer refuses such edits too).
+    """
+    kept: list[str] = []
+    dropped: list[str] = []
+    for path, block in split_patch(patch):
+        if path and is_test_path(path):
+            dropped.append(path)
+        else:
+            kept.append(block)
+    return "".join(kept), sorted(set(dropped))
+
+
 @dataclass(frozen=True)
 class Evaluation:
     status: Status
@@ -77,6 +111,7 @@ class Evaluation:
     patch_applied: bool | None
     hidden_tests_applied: bool | None
     duration_seconds: float
+    patch_test_files: tuple[str, ...] = ()
 
 
 def evaluate_patch(
@@ -88,6 +123,11 @@ def evaluate_patch(
 ) -> Evaluation:
     """Judge ``patch`` for ``task`` in a fresh container built from ``image``."""
     started = time.monotonic()
+    stripped: list[str] = []
+    if patch:
+        patch, stripped = strip_test_files(patch)
+        if not patch.strip():
+            patch = None
 
     def done(
         status: Status,
@@ -108,6 +148,7 @@ def evaluate_patch(
             patch_applied=patch_applied,
             hidden_tests_applied=hidden_tests_applied,
             duration_seconds=time.monotonic() - started,
+            patch_test_files=tuple(stripped),
         )
 
     with Sandbox(image, limits) as sandbox:
@@ -176,6 +217,10 @@ class TaskResult(BaseModel):
     timed_out: bool = False
     durations: dict[str, float] = Field(default_factory=dict)
     started_at: str
+    patch_test_files: list[str] = Field(default_factory=list)  # test edits stripped before judging
+    agent: dict[str, Any] | None = None  # AgentRun.to_record() when the solver is an agent
+    trace_path: str | None = None
+    failure: str | None = None  # evals.metrics.Failure, set by the runner
 
     @property
     def reason(self) -> str:
@@ -199,8 +244,13 @@ def run_task(
     cache_dir: Path = DEFAULT_CACHE_DIR,
     rebuild: bool = False,
     repeat: int = 0,
+    trace_dir: Path | None = None,
 ) -> tuple[TaskResult, str]:
-    """Build, solve, evaluate.  Returns the result record and a human-readable log."""
+    """Build, solve, evaluate.  Returns the result record and a human-readable log.
+
+    A solver that exposes ``last_run`` (an ``AgentRun``) gets its summary stored
+    in ``TaskResult.agent`` and its trace written to ``trace_dir``.
+    """
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     t0 = time.monotonic()
     durations: dict[str, float] = {}
@@ -248,6 +298,30 @@ def run_task(
     durations["solve"] = round(time.monotonic() - t1, 3)
     patch_bytes = len(patch.encode("utf-8")) if patch else 0
     log += [f"solve: {durations['solve']:.1f}s, patch {patch_bytes} bytes", ""]
+
+    agent_record: dict[str, Any] | None = None
+    trace_path: str | None = None
+    agent_run = getattr(solver, "last_run", None)
+    if isinstance(agent_run, AgentRun):
+        agent_record = agent_run.to_record()
+        if trace_dir is not None:
+            suffix = f".{repeat}" if repeat else ""
+            trace_path = str(agent_run.trace.write(trace_dir / f"{task.id}{suffix}.jsonl"))
+        log += [
+            "## agent",
+            f"termination: {agent_run.termination}"
+            + (f" ({agent_run.detail})" if agent_run.detail else ""),
+            f"steps {agent_run.steps} · tool calls {agent_run.tool_calls} "
+            f"(invalid {agent_run.invalid_tool_calls}) · test runs {agent_run.test_runs} "
+            f"(refused {agent_run.test_runs_refused}) · {agent_run.elapsed_seconds:.0f}s",
+            f"tokens {agent_run.ledger['input_tokens']} in / "
+            f"{agent_run.ledger['output_tokens']} out · ${agent_run.ledger['cost_usd']:.4f}",
+            f"files read: {', '.join(agent_run.files_read) or '-'}",
+            f"files edited: {', '.join(agent_run.files_edited) or '-'}",
+            f"final: {(agent_run.final_text or '').strip()[:600]}",
+            f"trace: {trace_path or '(not written)'}",
+            "",
+        ]
     log += ["## candidate patch", patch.rstrip() if patch else "(none)", ""]
 
     t2 = time.monotonic()
@@ -265,6 +339,8 @@ def run_task(
                 detail=detail,
                 image=image,
                 patch_bytes=patch_bytes,
+                agent=agent_record,
+                trace_path=trace_path,
             ),
             log,
         )
@@ -286,9 +362,16 @@ def run_task(
         test_counts=run.counts() if run else {},
         test_exit_code=run.exit_code if run else None,
         timed_out=run.timed_out if run else False,
+        patch_test_files=list(evaluation.patch_test_files),
+        agent=agent_record,
+        trace_path=trace_path,
     )
 
     log += [f"## verdict: {result.status}  reasons: {result.reason}"]
+    if evaluation.patch_test_files:
+        log.append(
+            f"test-file edits stripped before judging: {', '.join(evaluation.patch_test_files)}"
+        )
     if evaluation.detail:
         log += [evaluation.detail, ""]
     if verdict:

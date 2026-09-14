@@ -4,12 +4,15 @@
     python -m evals.runner --solver null --expect fail       # every task should FAIL
     python -m evals.runner --solver gold --repeat 2          # determinism check
     python -m evals.runner --solver gold --ids cachetools_001 cachetools_002
+    python -m evals.runner --solver baseline --model claude-sonnet-5 --max-run-cost 10
     python -m evals.runner --list
 
 Each run writes ``results/<solver>-<timestamp>-<id>/`` containing
 ``results.jsonl`` (one ``TaskResult`` per task and repeat), ``summary.json``
 and ``logs/<task_id>[.<repeat>].log`` with the patch, the test output and the
-per-test verdict table.
+per-test verdict table.  Agent solvers also write ``traces/<task_id>.jsonl``
+(spec §13.1) and get an ``agent`` block in the summary (spec §11.1 metrics and
+the §11.2 failure taxonomy).
 
 Phase 0 exit criterion: ``--solver null --expect fail`` and
 ``--solver gold --expect pass --repeat 2`` both exit 0 -- every task fails
@@ -33,7 +36,16 @@ from evals.benchmark.registry import TASKS_DIR, TaskLoadError, load_tasks
 from evals.benchmark.schema import Task
 from evals.harness import TaskResult, run_task
 from evals.judge import Status
-from evals.solvers import SOLVERS, get_solver
+from evals.metrics import agent_metrics, classify_failure, format_agent_metrics
+from evals.solvers import SOLVERS, BaselineSolver, Solver, get_solver
+from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget
+from repopilot.models.config import (
+    ConfigError,
+    ModelSettings,
+    api_key_for,
+    load_env,
+    provider_for,
+)
 from repopilot.sandbox.docker import docker_status
 from repopilot.sandbox.limits import DEFAULT_LIMITS
 from repopilot.sandbox.repo import DEFAULT_CACHE_DIR
@@ -53,6 +65,10 @@ class RunSummary(BaseModel):
     finished_at: str
     limits: dict[str, object]
     results_dir: str
+    model: str | None = None
+    budget: dict[str, object] | None = None
+    agent: dict[str, object] | None = None
+    stopped_early: str | None = None  # why the run ended before every task ran
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,7 +93,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="exit 1 unless every result has this status (oracle validation)",
     )
     parser.add_argument("--list", action="store_true", help="list the selected tasks and exit")
+    agent = parser.add_argument_group("agent solvers")
+    agent.add_argument(
+        "--model", help="model id for the agent (default: REPOPILOT_STRONG_MODEL or the built-in)"
+    )
+    agent.add_argument(
+        "--max-steps", type=int, help=f"model calls per task (default {DEFAULT_BUDGET.max_steps})"
+    )
+    agent.add_argument(
+        "--max-tool-calls", type=int, help=f"default {DEFAULT_BUDGET.max_tool_calls}"
+    )
+    agent.add_argument("--max-test-runs", type=int, help=f"default {DEFAULT_BUDGET.max_test_runs}")
+    agent.add_argument(
+        "--max-tokens", type=int, help=f"per task (default {DEFAULT_BUDGET.max_tokens})"
+    )
+    agent.add_argument(
+        "--max-cost", type=float, help=f"USD per task (default {DEFAULT_BUDGET.max_cost_usd})"
+    )
+    agent.add_argument(
+        "--max-runtime",
+        type=float,
+        help=f"seconds per task (default {DEFAULT_BUDGET.max_runtime_seconds})",
+    )
+    agent.add_argument(
+        "--max-run-cost",
+        type=float,
+        help="USD cap for the whole run: stop starting tasks once the estimated spend passes it",
+    )
+    agent.add_argument("--env-file", default=".env", help="where API keys are loaded from")
     return parser
+
+
+def budget_from_args(args: argparse.Namespace) -> AgentBudget:
+    return DEFAULT_BUDGET.replace(
+        max_steps=args.max_steps,
+        max_tool_calls=args.max_tool_calls,
+        max_test_runs=args.max_test_runs,
+        max_tokens=args.max_tokens,
+        max_cost_usd=args.max_cost,
+        max_runtime_seconds=args.max_runtime,
+    )
 
 
 def list_tasks(tasks: list[Task], tasks_dir: Path) -> None:
@@ -88,44 +143,74 @@ def list_tasks(tasks: list[Task], tasks_dir: Path) -> None:
 
 def run_benchmark(
     tasks: list[Task],
-    solver_name: str,
+    solver: Solver | str,
     *,
     out_root: Path,
     repeat: int = 1,
     rebuild: bool = False,
     cache_dir: Path = DEFAULT_CACHE_DIR,
+    max_run_cost: float | None = None,
 ) -> tuple[RunSummary, list[TaskResult]]:
-    solver = get_solver(solver_name)
+    if isinstance(solver, str):
+        solver = get_solver(solver)
+    solver_name = solver.name
     run_id = f"{solver_name}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:4]}"
     out_dir = out_root / run_id
     logs_dir = out_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
+    traces_dir = out_dir / "traces"
     results_path = out_dir / "results.jsonl"
+    by_id = {t.id: t for t in tasks}
 
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     t0 = time.monotonic()
     results: list[TaskResult] = []
+    spent = 0.0
+    stopped_early: str | None = None
     print(f"run {run_id}: {len(tasks)} task(s) × {repeat}, solver={solver_name}")
+    if isinstance(solver, BaselineSolver):
+        b = solver.budget
+        print(
+            f"model={solver.model} budget: {b.max_steps} steps, {b.max_tool_calls} tool calls, "
+            f"{b.max_test_runs} test runs, {b.max_tokens} tokens, ${b.max_cost_usd:.2f}, "
+            f"{b.max_runtime_seconds:.0f}s per task"
+            + (f"; run cap ${max_run_cost:.2f}" if max_run_cost is not None else "")
+        )
     print(f"{'task':<24} {'status':<6} {'reasons':<28} {'tests':<34} {'time':>7}")
 
     with results_path.open("a", encoding="utf-8") as sink:
         for index in range(repeat):
             for task in tasks:
+                if max_run_cost is not None and spent > max_run_cost:
+                    stopped_early = f"run cost ${spent:.2f} passed the ${max_run_cost:.2f} cap"
+                    break
                 result, log = run_task(
                     task,
                     solver,
                     cache_dir=cache_dir,
                     rebuild=rebuild and index == 0,
                     repeat=index,
+                    trace_dir=traces_dir,
                 )
+                failure = classify_failure(by_id[task.id], result)
+                result.failure = str(failure) if failure else None
                 results.append(result)
                 sink.write(result.model_dump_json() + "\n")
                 sink.flush()
                 suffix = f".{index}" if repeat > 1 else ""
                 (logs_dir / f"{task.id}{suffix}.log").write_text(log, encoding="utf-8")
                 print(_format_row(result))
+                if result.agent:
+                    spent += float(result.agent.get("cost_usd", 0.0))
+            if stopped_early:
+                break
 
     summary = _summarize(results, run_id, solver_name, len(tasks), repeat, started_at, t0, out_dir)
+    if isinstance(solver, BaselineSolver):
+        summary.model = solver.model
+        summary.budget = solver.budget.to_record()
+    summary.agent = agent_metrics(tasks, results)
+    summary.stopped_early = stopped_early
     (out_dir / "summary.json").write_text(summary.model_dump_json(indent=2), encoding="utf-8")
     return summary, results
 
@@ -142,7 +227,16 @@ def _format_row(result: TaskResult) -> str:
         tests += " timeout"
     total = result.durations.get("total", 0.0)
     label = f"{result.task_id}.{result.repeat}" if result.repeat else result.task_id
-    return f"{label:<24} {result.status:<6} {result.reason:<28} {tests:<34} {total:>6.1f}s"
+    row = f"{label:<24} {result.status:<6} {result.reason:<28} {tests:<34} {total:>6.1f}s"
+    if result.agent:
+        a = result.agent
+        row += (
+            f"  {a.get('termination', '?')} · {a.get('steps', 0)} steps · "
+            f"${float(a.get('cost_usd', 0.0)):.3f}"
+        )
+        if result.failure:
+            row += f" · {result.failure}"
+    return row
 
 
 def _summarize(
@@ -201,7 +295,23 @@ def print_summary(summary: RunSummary) -> None:
             print(
                 f"deterministic: NO -- differing tasks: {', '.join(summary.nondeterministic_tasks)}"
             )
+    if summary.agent:
+        print(format_agent_metrics(summary.agent))
+    if summary.stopped_early:
+        print(f"stopped early: {summary.stopped_early}")
     print(f"results: {summary.results_dir}")
+
+
+def build_solver(args: argparse.Namespace) -> Solver:
+    """The solver the CLI asked for; agent solvers get model, budget and keys checked."""
+    if args.solver != BaselineSolver.name:
+        return get_solver(args.solver)
+    load_env(args.env_file)
+    settings = ModelSettings.from_env(strong=args.model)
+    api_key_for(provider_for(settings.strong))  # the baseline uses the strong model only
+    return get_solver(
+        args.solver, model=settings.strong, budget=budget_from_args(args), cache_dir=args.cache_dir
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -226,13 +336,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {detail}", file=sys.stderr)
         return 2
 
+    try:
+        solver = build_solver(args)
+    except (ConfigError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     summary, results = run_benchmark(
         tasks,
-        args.solver,
+        solver,
         out_root=args.out,
         repeat=args.repeat,
         rebuild=args.rebuild,
         cache_dir=args.cache_dir,
+        max_run_cost=args.max_run_cost,
     )
     print_summary(summary)
 

@@ -88,6 +88,12 @@ diff --git a/tests/test_missing.py b/tests/test_missing.py
 +x = 2
 """
 
+# Same idea for a source file: a candidate patch that touches only tests is stripped
+# before judging, so a solver's "cannot apply" case needs a non-test path.
+UNAPPLIABLE_SOURCE_PATCH = UNAPPLIABLE_PATCH.replace(
+    "tests/test_missing.py", "fixturepkg/missing.py"
+)
+
 TEST_COMMAND = "pytest tests"
 ABOVE = "tests/test_clamp.py::test_above"
 INSIDE = "tests/test_clamp.py::test_inside"
