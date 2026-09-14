@@ -48,6 +48,7 @@ from repopilot.sandbox.docker import ImageSpec, Sandbox, build_task_image
 from repopilot.sandbox.limits import DEFAULT_LIMITS, SandboxLimits
 from repopilot.sandbox.repo import DEFAULT_CACHE_DIR, export_tree
 from repopilot.sandbox.results import TestOutcome, TestRun
+from repopilot.tools.paths import is_test_path
 
 SOURCES_DIR = Path(__file__).resolve().parent / "sources"
 REQUIRED_FILES = ("task.toml", "bug.patch", "description.md")
@@ -169,18 +170,6 @@ class NormalizedPatches:
     gold_files: tuple[str, ...]
     gold_symbols: tuple[str, ...]
     hidden_files: tuple[str, ...]
-
-
-def is_test_path(path: str) -> bool:
-    parts = Path(path).parts
-    name = parts[-1]
-    return (
-        "tests" in parts[:-1]
-        or "test" in parts[:-1]
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-        or name == "conftest.py"
-    )
 
 
 def normalize(draft: TaskDraft, *, cache_dir: Path = DEFAULT_CACHE_DIR) -> NormalizedPatches:
