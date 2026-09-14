@@ -22,9 +22,10 @@ runs/
 # Scratch clones of target repositories used while authoring tasks
 work/
 
-# Secrets / local config
+# Secrets / local config (the keyless template is the one exception)
 .env
 .env.*
+!.env.example
 
 # Editors / OS
 .idea/

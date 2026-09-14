@@ -31,6 +31,43 @@ Docker (Docker Desktop, OrbStack or colima) is required for sandboxed test
 execution. The first `-m docker` run builds the base image (python:3.11-slim +
 git + pytest), which takes a minute or two; later runs reuse it.
 
+## Models and API keys
+
+The agent talks to models through one small interface
+(`repopilot/models/`): neutral `Message` / `ToolSpec` / `ModelResponse` types,
+an adapter per vendor (Anthropic Messages API, OpenAI Responses API), a
+`FakeClient` that plays scripted replies for tests, a price table, and a
+`Ledger` that turns every call into tokens, latency and an estimated cost and
+enforces the cost / token caps of the agent budget (spec §9.1). Two model roles
+follow the routing ablation (§12.4): a *strong* model for planning and patching
+and a *cheap* one for rewriting and summarizing.
+
+| role | default | override |
+| --- | --- | --- |
+| strong | `claude-sonnet-5` ($2 / $10 per MTok in / out) | `REPOPILOT_STRONG_MODEL` or a CLI flag |
+| cheap | `claude-haiku-4-5-20251001` ($1 / $5) | `REPOPILOT_CHEAP_MODEL` or a CLI flag |
+
+OpenAI counterparts (`gpt-5.6-terra` $2 / $12, `gpt-5.6-luna` $0.20 / $1.20)
+plug in by name; any model used must have an entry in
+`repopilot/models/pricing.py`, so a cost is never unknown. Costs are estimates
+from that table (dated inside the file), not from the vendors' billing pages,
+which makes them reproducible from a trace alone.
+
+Keys never appear in code, traces, logs or the sandbox (containers start with
+a clean environment and no network). They come from the environment only:
+
+```bash
+cp .env.example .env                       # git-ignored; fill in ANTHROPIC_API_KEY / OPENAI_API_KEY
+uv run python scripts/model_smoke.py       # one tiny text + tool-call round trip per model, ~$0.001
+uv run pytest -m llm                       # the same as tests; skipped automatically without keys
+```
+
+CLI entry points load `.env`; library code only reads `os.environ`, and error
+messages name the missing variable, never a value. CI runs with no keys and
+deselects `-m llm`; `tests/test_no_secrets.py` fails the build if a key prefix
+is ever committed. Use a dedicated key per provider with a spend limit set in
+the vendor console, and revoke it if it leaks.
+
 ## Running the benchmark
 
 ```bash
@@ -106,6 +143,10 @@ unit suite if a task JSON ever drifts from its sources.
 
 ```
 repopilot/                 library
+  models/types.py          Message / ToolSpec / ToolCall / ModelResponse / Usage (vendor-neutral)
+  models/client.py         AnthropicClient, OpenAIClient, FakeClient; client_for(model)
+  models/config.py         ModelSettings (strong / cheap), key lookup, .env loading
+  models/pricing.py        $/MTok table -> estimate_cost; models/ledger.py totals + budget caps
   sandbox/limits.py        resource limits applied to every sandbox container
   sandbox/repo.py          host-side checkout of a repo at a commit (mirror cache, no .git)
   sandbox/docker.py        per-task image build + Sandbox container (exec / apply_patch /
@@ -129,7 +170,7 @@ evals/                     RepoPilot-Bench
 docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
-scripts/                   make_task.py, validate_tasks.py, export_task_schema.py
+scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py
 tests/                     unit tests (fast) + `-m docker` end-to-end tests;
                            test_benchmark_tasks.py checks the shipped tasks against their sources
 ```

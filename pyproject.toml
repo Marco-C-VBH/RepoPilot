@@ -8,6 +8,9 @@ authors = [{ name = "Marco Chen" }]
 keywords = ["llm-agent", "code-repair", "benchmark", "retrieval", "evaluation"]
 dependencies = [
     "pydantic>=2.7",
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "python-dotenv>=1.0",
 ]
 
 [dependency-groups]
@@ -30,6 +33,7 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
     "docker: needs a running Docker daemon (integration test; skipped automatically otherwise)",
+    "llm(provider): makes one paid call to that provider; skipped without its API key, never run in CI",
 ]
 
 [tool.ruff]

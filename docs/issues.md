@@ -8,6 +8,52 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 5 · OpenAI live test: function tools rejected on Chat Completions
+
+**Date:** 2026-09-14 · **Area:** model layer · **Severity:** medium (blocked every
+OpenAI tool call)
+
+**Symptom.** `uv run pytest -m llm` passed for Anthropic and failed for OpenAI on
+the first call that offered a tool:
+
+```
+openai.BadRequestError: Error code: 400 - Function tools with reasoning_effort are not
+supported for gpt-5.6-luna in /v1/chat/completions. To use function tools, use
+/v1/responses or set reasoning_effort to 'none'.
+```
+
+The plain text call before it had succeeded, so the key, the model id and the
+request plumbing were fine; only tools were refused.
+
+**Root cause.** The adapter used the Chat Completions endpoint. The gpt-5.x
+models reason by default, and Chat Completions cannot combine reasoning with
+function tools -- OpenAI's supported path for that is the Responses API.
+Turning reasoning off (`reasoning_effort="none"`) would have made the request
+succeed but would have benchmarked a deliberately weakened model against
+Claude at its defaults, which is not a fair provider comparison.
+
+**Fix.** `repopilot/models/client.py`: `OpenAIClient` now speaks the Responses
+API (`responses.create` with `instructions`, `input` items, flattened function
+tools with `strict: False`, `max_output_tokens`, `store=False` +
+`include=["reasoning.encrypted_content"]`). Reasoning models keep state in
+their output items, so `ModelResponse.raw_items` carries each turn's items and
+`OpenAIClient.to_input` replays them verbatim on the next call (the neutral
+`Message` gained an opaque `raw_items` field; the Anthropic adapter ignores it).
+`Usage` gained `reasoning_tokens`. The live test and the smoke script also got
+realistic output budgets (a 20-token cap is not enough for a model that thinks
+before it answers).
+
+**Guard.** `tests/test_models_live.py` (`-m llm`) is exactly the test that caught
+this: one paid round trip per provider, run on purpose before a commit that
+touches the adapters. The stand-in tests in `tests/test_model_clients.py` pin
+the new request shape.
+
+**Lesson.** Stand-in tests check that we send what we *think* the API wants;
+only a live call checks what it *actually* wants. Keep one cheap live test per
+provider and run it whenever an adapter changes.
+
+---
+
 ## 4 · CI red: ruff wanted to reformat a task description
 
 **Date:** 2026-09-10 · **Area:** CI / benchmark data · **Severity:** low
