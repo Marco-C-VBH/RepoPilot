@@ -8,6 +8,61 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 8 · Loop detector counted re-reads the compact context had made necessary
+
+**Date:** 2026-09-15 · **Area:** structured runtime, compact context · **Severity:**
+medium (both `toolz_003` runs of the first 2b experiment ended `agent_loop`)
+
+**Symptom.** First `--context compact` run with `claude-haiku-4-5`
+(`results/structured-20260915-001158-b6ad`, K = 3): `toolz_003` failed twice,
+both as `agent_loop`, on a task the full-history arm solves every time. Run 1:
+the model read `toolz/dicttoolz.py` 201–226 at steps 3 and 4, its first patch
+failed, ANALYZE reverted it (workspace reset at step 8), and the re-read at step
+9 was refused with "you have already made this exact call, and its result is
+above" — a third occurrence in the detector's count, but nothing of it was in
+the prompt: steps 3–4 had left the window and the tree had just been reset.
+Step 12 repeated it and the run ended. Run 2: the same range read at steps 3,
+8 (after a reset) and 16 (after failed edits); the notice at 16 was equally
+untrue, the repeat at 18 terminated the run.
+
+**Root cause.** Two assumptions of the Phase 2a loop detector stopped holding
+under compaction. (1) "An identical call has an identical answer": false once
+the workspace changes — after an edit or a reset, the same read is a new
+question. The 2a runs rarely tripped on this because the full history kept the
+old answer in view and the model rarely re-read. (2) "The earlier result is
+still in the model's context": the compact context drops tool outputs older
+than K steps *by design*, and its own note tells the model to read again what
+it needs. The detector counted every occurrence since the start of the run, so
+the runtime was refusing the very re-reads its context strategy asks for, with
+a message that was false when it mattered.
+
+**Fix.** `repopilot/agent/policies.py` / `runtime.py`: the call signature
+includes the workspace version (bumped by every successful edit and every
+reset), and only occurrences the model can still see count — steps at or after
+the start of the compact window; everything, as before, with the full history.
+The third *visible* identical call is refused with the notice (now always
+true); repeating it while the notice is still in view ends the run (the
+separate `loop_terminate_at` limit is gone — that was its only meaning). A
+repeat whose earlier result had left the window executes normally and is
+tallied as `rereads` in the runtime record and the run metrics: the price of
+compaction, now measured instead of punished.
+
+**Guard.** `tests/test_runtime.py::test_the_same_read_after_an_edit_or_a_reset_is_not_a_repeat`
+(full history: the same read at three workspace versions, all executed) and
+`tests/test_context.py::test_compact_context_rereads_outside_the_window_are_not_loops`
+(K = 2: re-reads after the window execute, three in view earn the notice, the
+notice expires with the window) plus
+`..._still_ends_a_loop_the_model_can_see` (a visible loop still terminates).
+
+**Lesson.** A guard written for one context strategy encodes that strategy's
+assumptions. Compaction changed what "the model already knows" means, and every
+runtime rule phrased in those terms — here, the loop detector — had to be
+re-derived from what is actually in the prompt. The rule now says what it
+checks: not "this call was made before" but "this call was made before, with
+the same tree, where the model can see it".
+
+---
+
 ## 7 · Runtime dropped the edit that arrived in the reply crossing the token cap
 
 **Date:** 2026-09-15 · **Area:** structured runtime · **Severity:** medium (turned

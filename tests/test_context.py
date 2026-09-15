@@ -281,6 +281,81 @@ def test_compact_runtime_sends_state_window_and_instruction_each_step(tmp_path: 
     assert run.trace.events[0].data["context"]["window_steps"] == 2
 
 
+def compact_agent(tmp_path: Path, script: list, *, window_steps: int = 2):
+    root = tmp_path / "repo"
+    init_repo(root, DEMO_FILES)
+    toolbox = Toolbox(
+        Workspace.from_repo(root),
+        ScriptedSandbox(
+            run=make_run(**{NODEID: "passed"}),
+            runs=[make_run(**{NODEID: "failed"}), make_run(**{NODEID: "passed"})],
+        ),
+        test_command=TASK.test_command,
+    )
+    client = FakeClient(script=script)
+    context = ContextConfig(mode="compact", window_steps=window_steps)
+    return StructuredAgent(client, toolbox, AgentBudget(), context=context), client
+
+
+def policies(run, name: str) -> list[str]:
+    return [
+        e.data["policy"]
+        for e in run.trace.events
+        if e.kind == "tool_call" and e.data["name"] == name
+    ]
+
+
+def test_compact_context_rereads_outside_the_window_are_not_loops(tmp_path: Path) -> None:
+    """Issue #8: what the model can no longer see, it may legitimately ask for again."""
+    agent, client = compact_agent(
+        tmp_path,
+        [
+            response(PLAN),  # 1
+            response("", (READ,)),  # 2 LOCALIZE
+            response("", (READ2,)),  # 3
+            response("", (SEARCH,)),  # 4
+            response("", (READ,)),  # 5 step 2's result left the window: a re-read, executed
+            response("", (READ,)),  # 6 step 5's result is in view: a repeat, still executed
+            response("", (READ,)),  # 7 the third in view: refused with the notice
+            response("", (SEARCH,)),  # 8 re-read (step 4 is out of view)
+            response("", (READ2,)),  # 9 re-read (step 3 is out of view)
+            response("", (READ,)),  # 10 the notice (step 7) has left the window: executed again
+            response("Cache.put: > should be >=."),  # 11 hypothesis
+            response("", (EDIT,)),  # 12 PATCH
+            response("changed the comparison"),  # 13 -> TEST green -> DONE
+        ],
+    )
+    run = agent.run(TASK)
+
+    assert run.termination is Termination.DONE
+    assert policies(run, "read_file") == [
+        "executed",  # 2
+        "executed",  # 3 (demo/util.py)
+        "executed",  # 5
+        "executed",  # 6
+        "loop_notice",  # 7
+        "executed",  # 9 (demo/util.py)
+        "executed",  # 10
+    ]
+    assert policies(run, "search_symbol") == ["executed", "executed"]
+    assert run.runtime["loop_interventions"] == 1
+    assert run.runtime["repeated_tool_calls"] == 6 and run.runtime["rereads"] == 4
+    # The notice was true when it was sent: both earlier results were in the prompt.
+    seventh = client.calls[6].messages
+    assert [c.id for m in seventh for c in m.tool_calls] == ["r1", "r1"]
+
+
+def test_compact_context_still_ends_a_loop_the_model_can_see(tmp_path: Path) -> None:
+    agent, _ = compact_agent(
+        tmp_path,
+        [response(PLAN)] + [response("", (READ,))] * 4 + [response("never reached")],
+    )
+    run = agent.run(TASK)
+    assert run.termination is Termination.AGENT_LOOP
+    assert policies(run, "read_file") == ["executed", "executed", "loop_notice", "loop_terminated"]
+    assert run.runtime["rereads"] == 0
+
+
 def test_runner_context_flag_reaches_the_structured_solver(monkeypatch: pytest.MonkeyPatch) -> None:
     from evals.solvers import StructuredSolver
     from repopilot.models.config import ConfigError

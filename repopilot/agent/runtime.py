@@ -530,6 +530,7 @@ class _Execution:
                     )
                 break
         self.state.repeated_tool_calls = self.loops.repeats()
+        self.state.rereads = self.loops.rereads
         return termination, edits
 
     def policy(
@@ -554,7 +555,15 @@ class _Execution:
                 ),
                 "invalid",
             )
-        verdict = self.loops.check(call.name, call.arguments)
+        # An identical call after an edit or a reset is a new question, and in
+        # compact mode only the window the model can still see counts (issue #8).
+        verdict = self.loops.check(
+            call.name,
+            call.arguments,
+            version=self.toolbox.workspace.version,
+            step=self.tracker.steps,
+            since=self.tracker.steps - self.context.window_steps if self.context.compact else 0,
+        )
         if verdict == "terminate":
             return (
                 ToolResult.error("identical call repeated after the notice; the run ends here"),

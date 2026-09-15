@@ -12,8 +12,9 @@ with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
 Phase 2a (structured runtime) and 2a.1 (tolerant edits) — done and measured
-against the baseline, results below; 2b (context compaction) — built,
-runs pending.** Every number here is measured by a run archived under
+against the baseline, results below; 2b (context compaction) — built, first
+run measured, re-run after a runtime fix (issue #8) pending.** Every number
+here is measured by a run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -293,8 +294,10 @@ What the runtime does that the baseline leaves to the model: it reproduces
 before planning, verifies after every patching turn, and ends the run on a green
 full-suite run (no exploring after success); it refuses tools outside the phase
 and asks for the hypothesis when a phase's tool budget (10 calls) is spent; it
-refuses the third identical tool call with a replanning notice and ends the run
-as `agent_loop` on the fourth (spec §9.2); it nudges once when a patching turn
+refuses the third identical tool call the model can still see (same arguments,
+same workspace version) with a replanning notice and ends the run as
+`agent_loop` when the call is repeated with that notice in view (spec §9.2,
+issue #8); it nudges once when a patching turn
 ends without an edit and ends the run as `no_progress` on the second; it reverts
 the workspace when ANALYZE says so. `max_test_runs = 5` now means one
 reproduction plus at most four patch → test rounds. The conversation history is
@@ -381,14 +384,21 @@ beforehand in `docs/runtime-design.md`:
   That is Phase 2b.
 
 - **2b — context compaction** (`--context compact`, built; pre-registered in
-  `docs/runtime-design.md` §8, runs pending). Every model call is rebuilt from
-  the runtime's working state (task, initial failures one line each, plan,
-  hypotheses, diagnoses, files read as line ranges, searches, the current diff,
-  the latest test run, budget left) plus the last three tool-calling steps
-  verbatim and the current phase's instructions; nothing is summarised by a
-  model. A replay of the 2a.1 traces predicts 55–60% of today's cumulative
-  tokens and long runs at 40–45k instead of ~100k; the expectation is written
-  down before the run, with `cachetools_003` as the named test case.
+  `docs/runtime-design.md` §8). Every model call is rebuilt from the runtime's
+  working state (task, initial failures one line each, plan, hypotheses,
+  diagnoses, files read as line ranges, searches, the current diff, the latest
+  test run, budget left) plus the last three tool-calling steps verbatim and
+  the current phase's instructions; nothing is summarised by a model. A replay
+  of the 2a.1 traces predicted 55–60% of the cumulative tokens; the first
+  Haiku run (2 × 14, `evals/experiments/structured-2b-haiku45-x2-run1`) gave
+  −31% tokens and −24% cost at the same 10.9 steps, but 25 / 28: two
+  `agent_loop` failures on `toolz_003` were the runtime's fault — the loop
+  detector refused the re-reads its own context strategy had made necessary
+  (issue #8, fixed: signatures carry the workspace version, only calls the
+  model can still see count, re-reads are tallied as `rereads`) — and
+  `cachetools_003` split, one pass at 62k tokens where the full arm had failed
+  twice at 100k+, one cap at 24 steps. The re-run after the fix is
+  pre-registered in §8.5; its numbers go here.
 
 ## RepoPilot-Bench v0
 

@@ -69,9 +69,13 @@ Differences from the spec's diagram, and why:
 - *Phase tool sets.* A call to a tool outside the phase is refused with a
   message naming the phase and the way forward; counted as `refused_tool_calls`,
   not as invalid (the schema was fine; the policy was not).
-- *Loop detection.* Signature = tool name + canonical JSON of the arguments.
-  Third occurrence → refused with a replanning message
-  (`loop_interventions`); fourth → `agent_loop`.
+- *Loop detection.* Signature = tool name + canonical JSON of the arguments +
+  the workspace version (an edit or a reset makes the same call new — since
+  issue #8). Third occurrence the model can still see → refused with a
+  replanning message (`loop_interventions`); repeated while that message is in
+  view → `agent_loop`. With the full history everything is in view; the compact
+  context counts only its window (§8.4), and re-reads of what left it are
+  tallied as `rereads`.
 - *Phase limits.* LOCALIZE: 10 tool calls per visit, then the runtime asks for
   the hypothesis with no tools offered (`forced_transitions`). PATCH: 4 edits per
   visit, then edits are refused until the tests run.
@@ -304,3 +308,39 @@ Then Sonnet and luna once each: success unchanged (14 / 14), Sonnet tokens
 −20–30%. If steps rise enough to eat the token saving, that is the result.
 Not in 2b: prompt caching (a price lever, measured separately), a
 threshold-triggered hybrid (a later variant), model-written summaries (§12.4).
+
+### 8.4 First run (2026-09-15, `structured-2b-haiku45-x2-run1`) against §8.3
+
+| metric | expected | first run | |
+|---|---|---|---|
+| tokens per task (median) | ≤ 35k | 38.8k (−31% vs. 56.2k) | ✗, close |
+| `cachetools_003` | passes, < 45k | run 1 passes (16 steps, 62k); run 2 `budget_tokens` (24 steps, 104k) | ✗ |
+| `budget_tokens` terminations | 0 | 1 / 28 | ✗ |
+| success | ≥ 26 / 28, identical verdicts | 25 / 28, `cachetools_003` flips | ✗ |
+| steps per task | 10.9, may rise 1–2 | 10.9 (tool calls 8.6 → 8.8) | ✓ |
+| cost per task (median) | ≤ $0.045 | $0.048 (−24% vs. $0.063) | ✗, close |
+
+Three failures. Two are `agent_loop` on `toolz_003`, a task the full arm solves
+in both runs — an artifact of the runtime, not of the model: the loop detector
+counted re-reads that the compact context had made necessary and refused them
+with a notice that was false (issue #8). Fixed before the re-run: the call
+signature carries the workspace version, only calls the model can still see
+count, and re-reads of what left the window are tallied (`rereads`) instead of
+refused. The third is `cachetools_003` again: one run passes where the full
+arm had failed twice (a real effect of the smaller prompts — 62k against 101k
+and 105k), the other re-localised twice (two forced hypotheses, 24 steps) and
+hit the cap. That one is the model's, and stays in the table.
+
+What compaction costs, measured: 32 repeated tool calls in 28 runs (13% of
+calls) against 0 in the full arm, 8 forced hypotheses against 5, PATCH steps 71
+→ 86 while LOCALIZE steps fell 198 → 185. Steps did not rise; the model spent
+them differently.
+
+### 8.5 Re-run after the fix (written before running)
+
+Same command, same budget, `--repeat 2`. Expected: `toolz_003` passes both
+runs (the artifact is gone); success ≥ 26 / 28; `agent_loop` 0; tokens median
+≤ 40k; `budget_tokens` ≤ 1 (`cachetools_003` may still hit the cap — that is
+the residual, reported as such); `rereads` > 0 (the price, now visible).
+§8.3 stays the standard the arm is judged against; the re-run only removes the
+artifact.

@@ -90,7 +90,8 @@ class AgentState:
     steps_by_phase: dict[str, int] = field(default_factory=dict)
     # interventions, all counted for the metrics
     loop_interventions: int = 0
-    repeated_tool_calls: int = 0
+    repeated_tool_calls: int = 0  # identical calls, same workspace version
+    rereads: int = 0  # ... of which the earlier result had left a compact window
     refused_tool_calls: int = 0
     forced_transitions: int = 0
     nudges: int = 0
@@ -139,6 +140,7 @@ class AgentState:
             "steps_by_phase": dict(self.steps_by_phase),
             "loop_interventions": self.loop_interventions,
             "repeated_tool_calls": self.repeated_tool_calls,
+            "rereads": self.rereads,
             "refused_tool_calls": self.refused_tool_calls,
             "forced_transitions": self.forced_transitions,
             "nudges": self.nudges,

@@ -165,6 +165,7 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
 RUNTIME_COUNTERS = (
     "loop_interventions",
     "repeated_tool_calls",
+    "rereads",
     "refused_tool_calls",
     "forced_transitions",
     "nudges",
@@ -227,7 +228,8 @@ def format_agent_metrics(metrics: dict[str, Any]) -> str:
             f"{runtime['loop_rate']:.1%} · interventions: loop {runtime['loop_interventions']}, "
             f"forced {runtime['forced_transitions']}, nudges {runtime['nudges']}, refused "
             f"{runtime['refused_tool_calls']}, resets {runtime['workspace_resets']} · "
-            f"steps after green {runtime['avg_steps_after_green']:.1f}"
+            f"repeated calls {runtime['repeated_tool_calls']} (re-reads after the window "
+            f"{runtime['rereads']}) · steps after green {runtime['avg_steps_after_green']:.1f}"
         )
         lines.append(
             "  steps by phase: "

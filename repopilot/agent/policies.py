@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,8 +30,10 @@ class RuntimeLimits:
 
     localize_tool_calls: int = 10  # per LOCALIZE visit, then the hypothesis is requested
     patch_edits: int = 4  # per PATCH visit, then edits are refused until the tests run
-    loop_notice_at: int = 3  # the n-th identical call is refused with a replanning notice
-    loop_terminate_at: int = 4  # the n-th identical call ends the run as agent_loop
+    # The n-th identical call whose earlier results the model can still see is
+    # refused with a replanning notice; repeating it while the notice is still in
+    # view ends the run as agent_loop.
+    loop_notice_at: int = 3
     finalize_continues: int = 1  # how often FINALIZE may send the model back
 
     def to_record(self) -> dict[str, Any]:
@@ -40,7 +41,6 @@ class RuntimeLimits:
             "localize_tool_calls": self.localize_tool_calls,
             "patch_edits": self.patch_edits,
             "loop_notice_at": self.loop_notice_at,
-            "loop_terminate_at": self.loop_terminate_at,
             "finalize_continues": self.finalize_continues,
         }
 
@@ -57,27 +57,52 @@ def call_signature(name: str, arguments: dict[str, Any] | None) -> str:
 class LoopDetector:
     """Counts identical tool calls (spec §9.2).
 
-    ``check`` returns ``None`` (fine), ``"notice"`` (refuse this call and ask
-    the model to change approach) or ``"terminate"`` (the model repeated the
-    call after the notice).
+    Two calls are identical when the tool, the canonical arguments and the
+    workspace ``version`` match: after an edit or a reset the same read or
+    search is a new question with a possibly new answer.  ``check`` returns
+    ``None`` (fine), ``"notice"`` (refuse this call and ask the model to change
+    approach) or ``"terminate"`` (the model repeated the call while the notice
+    was still in front of it).
+
+    Only what the model can still see counts: occurrences at steps ``>= since``.
+    The full-history context passes ``since=0``; the compact context passes the
+    start of its window, so re-reading something whose result has left the
+    context is not a loop (issue #8) -- the notice tells the model the result
+    is above, and it must be.  Such re-reads are tallied in ``rereads`` as the
+    price of compaction.
     """
 
     limits: RuntimeLimits = DEFAULT_LIMITS
-    seen: Counter[str] = field(default_factory=Counter)
+    seen: dict[str, list[int]] = field(default_factory=dict)  # signature -> steps
+    noticed: dict[str, int] = field(default_factory=dict)  # signature -> step of the notice
+    rereads: int = 0  # identical calls whose earlier result had left the window
 
-    def check(self, name: str, arguments: dict[str, Any] | None) -> str | None:
-        key = call_signature(name, arguments)
-        self.seen[key] += 1
-        count = self.seen[key]
-        if count >= self.limits.loop_terminate_at:
+    def check(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None,
+        *,
+        version: int = 0,
+        step: int = 0,
+        since: int = 0,
+    ) -> str | None:
+        key = f"{call_signature(name, arguments)} @v{version}"
+        steps = self.seen.setdefault(key, [])
+        steps.append(step)
+        visible = sum(1 for s in steps if s >= since)
+        if visible == 1 and len(steps) > 1:
+            self.rereads += 1
+        notice = self.noticed.get(key)
+        if notice is not None and notice >= since:
             return "terminate"
-        if count >= self.limits.loop_notice_at:
+        if visible >= self.limits.loop_notice_at:
+            self.noticed[key] = step
             return "notice"
         return None
 
     def repeats(self) -> int:
-        """How many calls were repeats of an earlier identical call."""
-        return sum(count - 1 for count in self.seen.values() if count > 1)
+        """How many calls repeated an earlier identical call (same workspace version)."""
+        return sum(len(steps) - 1 for steps in self.seen.values() if len(steps) > 1)
 
 
 def phase_refusal(phase: Phase, name: str) -> str:

@@ -305,6 +305,36 @@ def test_loop_detection_applies_to_refused_calls_too(tmp_path: Path) -> None:
     assert policies == ["phase_refused", "phase_refused", "loop_notice", "loop_terminated"]
 
 
+def test_the_same_read_after_an_edit_or_a_reset_is_not_a_repeat(tmp_path: Path) -> None:
+    """Issue #8: the workspace changed, so the same call is a new question."""
+    toolbox = make_toolbox(tmp_path, FAILING, FAILING, PASSING)
+    revert = json.dumps({"diagnosis": "wrong constant", "next": "patch", "keep_patch": False})
+    runner, _ = agent(
+        toolbox,
+        [
+            response(PLAN),
+            response("", (READ,)),  # LOCALIZE: the read, original tree
+            response(HYPOTHESIS),
+            response("", (READ, EDIT_AGAIN)),  # PATCH: the same read (a repeat), then an edit
+            response("bumped the default"),  # -> TEST fails
+            response(revert),  # ANALYZE: the workspace is reset
+            response("", (READ, EDIT)),  # PATCH: the same read of a changed tree: not a third one
+            response("fixed the comparison"),  # -> TEST green -> DONE
+        ],
+    )
+    run = runner.run(TASK)
+
+    assert run.termination is Termination.DONE and run.runtime["workspace_resets"] == 1
+    reads = [
+        e.data["policy"]
+        for e in run.trace.events
+        if e.kind == "tool_call" and e.data["name"] == "read_file"
+    ]
+    assert reads == ["executed", "executed", "executed"]
+    assert run.runtime["repeated_tool_calls"] == 1 and run.runtime["loop_interventions"] == 0
+    assert run.runtime["rereads"] == 0  # the full history never drops a result
+
+
 def test_patch_turn_without_an_edit_is_nudged_then_ends_as_no_progress(tmp_path: Path) -> None:
     toolbox = make_toolbox(tmp_path)
     runner, client = agent(
@@ -531,13 +561,32 @@ def test_model_error_and_provider_stop_terminate(tmp_path: Path) -> None:
 
 
 def test_loop_detector_and_json_parsing() -> None:
-    detector = LoopDetector(RuntimeLimits(loop_notice_at=2, loop_terminate_at=3))
-    assert detector.check("read_file", {"path": "a", "start": 1}) is None
-    assert detector.check("read_file", {"start": 1, "path": "a"}) == "notice"  # same call
-    assert detector.check("read_file", {"path": "a", "start": 1}) == "terminate"
-    assert detector.check("read_file", {"path": "b"}) is None
+    detector = LoopDetector(RuntimeLimits(loop_notice_at=2))
+    assert detector.check("read_file", {"path": "a", "start": 1}, step=1) is None
+    assert detector.check("read_file", {"start": 1, "path": "a"}, step=2) == "notice"  # same call
+    assert detector.check("read_file", {"path": "a", "start": 1}, step=3) == "terminate"
+    assert detector.check("read_file", {"path": "b"}, step=3) is None
     assert detector.repeats() == 2
+    # After an edit or a reset (a new workspace version) the same call is a new one.
+    assert detector.check("read_file", {"path": "a", "start": 1}, version=1, step=4) is None
+    assert detector.repeats() == 2 and detector.rereads == 0
     assert call_signature("x", None) == "x {}"
+
+    # In a compact context only what the model can still see counts (issue #8):
+    # an occurrence that left the window makes the call a re-read, not a loop ...
+    window = LoopDetector(RuntimeLimits(loop_notice_at=2))
+    assert window.check("read_file", {"path": "a"}, step=1, since=0) is None
+    assert window.check("read_file", {"path": "a"}, step=5, since=3) is None
+    assert window.rereads == 1 and window.repeats() == 1
+    # ... two in view earn the notice, a repeat while the notice is in view ends
+    # the run, and once the notice itself has left the window it is a re-read again.
+    assert window.check("read_file", {"path": "a"}, step=6, since=4) == "notice"
+    assert window.check("read_file", {"path": "a"}, step=8, since=6) == "terminate"
+    later = LoopDetector(RuntimeLimits(loop_notice_at=2))
+    assert later.check("read_file", {"path": "a"}, step=1, since=0) is None
+    assert later.check("read_file", {"path": "a"}, step=2, since=0) == "notice"
+    assert later.check("read_file", {"path": "a"}, step=7, since=5) is None
+    assert later.rereads == 1
 
     assert parse_json_reply('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_reply('Sure: {"plan": ["x"]} done') == {"plan": ["x"]}
