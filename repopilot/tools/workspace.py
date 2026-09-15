@@ -63,7 +63,13 @@ class Workspace:
         cache_dir: Path = DEFAULT_CACHE_DIR,
         parent: Path | None = None,
     ) -> Workspace:
-        """Export ``repo`` at ``base_commit`` into a temp dir and commit it (plus the bug)."""
+        """Export ``repo`` at ``base_commit`` into a temp dir and commit it (plus the bug).
+
+        The result has exactly one commit, like the sandbox image: the bug is
+        amended into the base commit, so nothing under ``.git`` records the
+        mutation as a diff.  The tools refuse ``.git`` anyway; this keeps the
+        history clean for any future tool that runs commands in the workspace.
+        """
         tempdir = Path(tempfile.mkdtemp(prefix="repopilot-ws-", dir=parent))
         try:
             root = tempdir / "repo"
@@ -75,7 +81,7 @@ class Workspace:
                 _git(
                     root, "apply", "--index", "--whitespace=nowarn", "-", stdin=_newline(bug_patch)
                 )
-                _git(root, "commit", "-q", "-m", "bug")
+                _git(root, "commit", "-q", "--amend", "--no-edit")
         except Exception:
             shutil.rmtree(tempdir, ignore_errors=True)
             raise

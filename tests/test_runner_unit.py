@@ -154,3 +154,62 @@ def test_archive_run_copies_summary_results_and_traces(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="exists"):
         archive(run_dir, "demo", out_root=tmp_path / "experiments")
     archive(run_dir, "demo", out_root=tmp_path / "experiments", force=True)
+
+
+def test_leak_scan_flags_hidden_markers_and_reports_localization(tmp_path: Path) -> None:
+    from scripts.leak_scan import scan
+
+    tasks = {
+        "a_001": {
+            "id": "a_001",
+            "gold_files": ["pkg/core.py"],
+            "hidden_test_patch": (
+                "diff --git a/tests/test_hidden.py b/tests/test_hidden.py\n"
+                "--- /dev/null\n+++ b/tests/test_hidden.py\n@@ -0,0 +1,2 @@\n"
+                "+def test_secret_behaviour():\n+    assert True\n"
+            ),
+        }
+    }
+
+    def event(seq: int, **data: object) -> str:
+        return json.dumps({"seq": seq, "t": 0.0, **data}) + "\n"
+
+    clean = tmp_path / "results" / "run-clean" / "traces"
+    clean.mkdir(parents=True)
+    (clean / "a_001.jsonl").write_text(
+        event(0, kind="run_start", model="m1")
+        + event(1, kind="tool_call", name="run_tests", arguments={}, output="1 failed")
+        + event(2, kind="tool_call", name="read_file", arguments={"path": "pkg/core.py"}, output="")
+        + event(3, kind="tool_call", name="edit_file", arguments={"path": "pkg/core.py"}, output="")
+    )
+    findings, by_model = scan([tmp_path / "results"], tasks)
+    assert findings == []
+    assert by_model["m1"]["first call: run_tests"] == 1
+    assert by_model["m1"]["first edit in a gold file"] == 1
+    assert by_model["m1"]["ran tests before the first edit"] == 1
+
+    # An archived copy of the same run is counted once, not twice.
+    archived = tmp_path / "experiments" / "demo"
+    shutil.copytree(clean.parent, archived)
+    (archived / "summary.json").write_text(json.dumps({"archived_from": "results/run-clean"}))
+    _, by_model = scan([tmp_path / "results", tmp_path / "experiments"], tasks)
+    assert by_model["m1"]["runs"] == 1
+
+    leaky = tmp_path / "results" / "run-leaky" / "traces"
+    leaky.mkdir(parents=True)
+    (leaky / "a_001.jsonl").write_text(
+        event(0, kind="run_start", model="m1")
+        + event(
+            1,
+            kind="tool_call",
+            name="run_tests",
+            arguments={},
+            output="test_secret_behaviour FAILED",
+        )
+        + event(
+            2, kind="tool_call", name="read_file", arguments={"path": "../outside.py"}, output=""
+        )
+    )
+    findings, _ = scan([tmp_path / "results"], tasks)
+    assert len(findings) == 2
+    assert "test_secret_behaviour" in findings[0] and "outside the repository" in findings[1]

@@ -6,6 +6,7 @@ exercised against a fake sandbox that records what it was asked to do.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -100,6 +101,14 @@ def test_workspace_create_applies_the_bug_patch(tmp_path: Path) -> None:
     with Workspace.create(str(origin), sha, BUG_PATCH, cache_dir=tmp_path / "cache") as ws:
         assert "high - 1" in ws.read_text("fixturepkg/__init__.py")  # buggy tree is HEAD
         assert ws.diff() == ""
+        # One commit only: the mutation is not recoverable from the history.
+        count = subprocess.run(
+            ["git", "-C", str(ws.root), "rev-list", "--count", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert count == "1"
         root = ws.root
     assert not root.exists()  # temp dir removed on close
 

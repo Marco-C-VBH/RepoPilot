@@ -23,7 +23,7 @@ controlled-mutation tasks), every configuration under the spec §9.1 budget
 
 | model | runs | success | steps | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | invalid tool calls |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `claude-sonnet-5` | 3 × 14 | **42 / 42** | 5.9 | 18.3k | $0.044 | 14 s | 0 | 1.4% |
+| `claude-sonnet-5` | 3 × 14 | **42 / 42** | 5.9 | 18.7k | $0.045 | 15 s | 0 | 1.4% |
 | `gpt-5.6-luna` | 1 × 14 | **14 / 14** | 7.7 | 33.7k | $0.003 | 18 s | 0 | 8.3% |
 | `claude-haiku-4-5` | 1 × 14 | **11 / 14** | 14.3 | 90.8k | $0.105 | 27 s | 6 / 14 | 0.0% |
 
@@ -211,6 +211,21 @@ Across models (`evals/experiments/baseline-v0-haiku45/`, `baseline-v0-luna/`):
   the validator and corrected on the next step — 12 of its 144 calls, the 8.3%
   invalid rate. The schemas are sent without OpenAI's strict mode, so this is
   exactly the kind of error runtime tool validation should absorb.
+- **Localization never failed — and that is the leak.** The first `edit_file`
+  landed in a gold file in 71 / 71 runs that edited, across all three models,
+  through two channels: Sonnet takes the identifier from the report
+  (`search_symbol` first in 38 / 43 runs, the query verbatim from the report in
+  41 / 43); Haiku and luna run the tests first (16 / 17 and 8 / 14) and follow
+  the failing test to the function. A scan of all 74 traces
+  (`scripts/leak_scan.py`) found no hidden test file or hidden test name in
+  anything the agent saw, and neither the sandbox nor the workspace exposes a
+  history to diff against; what gives the bugs away is the repository itself —
+  comments, docstrings and release notes that describe the reverted behaviour
+  (`tenacity_004`), and textbook fault patterns (`cache={}`, `if not cache`,
+  `type(e) in types`). `docs/leak-audit.md` has the audit and a four-arm
+  ablation (report / tests / neither) to measure each channel; with a larger
+  budget (300k tokens) Haiku also solved its three failures (15–24 steps,
+  $0.13–0.21 each), so they were budget failures, not capability failures.
 - **Statistical caveat.** With 14 tasks one task is 7 points; Haiku's 78.6% has a
   95% interval of roughly 52–93%. Verdict-level comparisons on v0 need repeats,
   and success-rate claims need the larger v1. Token, step and termination
@@ -316,9 +331,11 @@ evals/                     RepoPilot-Bench
 docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
+docs/leak-audit.md         why v0 saturates: what the agent cannot see, what it did see, ablation plan
 evals/experiments/         archived runs behind the numbers in this README (summary, results, traces)
 scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py,
-                           archive_run.py (results/<run> -> evals/experiments/<name>)
+                           archive_run.py (results/<run> -> evals/experiments/<name>),
+                           leak_scan.py (traces never contain a hidden test; how each model localizes)
 tests/                     unit tests (fast) + `-m docker` end-to-end tests;
                            test_benchmark_tasks.py checks the shipped tasks against their sources
 ```
