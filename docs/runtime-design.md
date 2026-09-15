@@ -246,3 +246,61 @@ keeps the patch (2a.1 worked) but goes back to localizing, re-reads 100–150-li
 slices, and the token cap arrives at step 15–16 with the regression still in.
 Context replay is the binding constraint; that is 2b's target, pre-registered
 there.
+
+## 8. 2b — context compaction (written 2026-09-15, before running)
+
+### 8.1 Where the tokens go
+
+In the 2a.1 structured Haiku runs (305 model calls), the first prompt of a run
+is ~2k tokens (system prompt, task, reproduction output, PLAN instructions) and
+the history then grows by a median of 395 tokens per step (mean 581, p90 1.5k,
+max 2.4k). A 15-step run reaches 10–11k input tokens per call and ~100k
+cumulative, of which the fixed prefix alone is ~30k. Simulating "fixed prefix +
+the last K tool steps verbatim" on those 305 calls gives 69% (K = 2), 77%
+(K = 3), 84% (K = 4) of today's cumulative input; shrinking the prefix as well
+— the reproduction output (up to 6,000 characters, re-sent every step) becomes
+one line per failing test — brings K = 3 to an estimated 55–60%, and the long
+runs from ~100k to 40–45k. Those two numbers are the design's expectation.
+
+### 8.2 Design (`--context compact`, structured solver only)
+
+Every model call is rebuilt from the runtime's records; nothing is summarised by
+a model, so the arm costs no extra calls and is deterministic:
+
+```
+system      RUNTIME_SYSTEM_PROMPT + how to read the working state
+user        WORKING STATE, rendered from AgentState:
+              task (repository, test command, bug report verbatim)
+              initial test run: counts + one line per failing test (≤ 8)
+              plan, suspects, hypotheses (active / tested / rejected), diagnoses
+              files read (path + line ranges only), searches made
+              current patch: the diff, verbatim, clipped to 2,000 characters
+              latest test run with the patch: fixed / still failing / newly failing
+              budget left: steps, tool calls, test runs, tokens
+...         the last `window_steps` (= 3) tool-calling steps, whole: the
+            assistant message with its tool calls, the tool results, any nudge
+user        the current phase's instructions (re-sent every step)
+```
+
+Decisions: K = 3 (Marco, from the simulation); the patch travels as a diff,
+not as a file list; text-only replies (plan, hypothesis, analysis, summary) are
+not replayed — their content is in the state. Whole steps are kept so
+`tool_use` / `tool_result` pairs and OpenAI's reasoning items never split. The
+ANALYZE instruction drops its copy of the test results (the state has them).
+`full` mode is byte-for-byte what 2a sent; the two arms differ in context only.
+
+### 8.3 Pre-registered expectations (Haiku, 2 × 14, same tools as 2a.1)
+
+| metric | `full` (2a.1) | expected `compact` |
+|---|---|---|
+| tokens per task (median) | 56.2k | ≤ 35k |
+| `cachetools_003` | 103k tokens, `budget_tokens`, regression left in | passes; < 45k tokens |
+| `budget_tokens` terminations | 3 / 28 | 0 |
+| success | 26 / 28, verdicts identical across repeats | ≥ 26 / 28, still identical |
+| steps per task | 10.9 | may rise by 1–2 (re-reads of code that left the window) — reported as the cost |
+| cost per task (median) | $0.063 | ≤ $0.045 |
+
+Then Sonnet and luna once each: success unchanged (14 / 14), Sonnet tokens
+−20–30%. If steps rise enough to eat the token saving, that is the result.
+Not in 2b: prompt caching (a price lever, measured separately), a
+threshold-triggered hybrid (a later variant), model-written summaries (§12.4).

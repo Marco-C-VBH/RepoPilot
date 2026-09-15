@@ -152,7 +152,12 @@ def plan_prompt(task: TaskInput, reproduction: str, *, suite_green: bool) -> str
 
 
 def analyze_prompt(
-    summary: str, *, fixed: int = 0, initial: int = 0, newly_failing: int = 0
+    summary: str,
+    *,
+    fixed: int = 0,
+    initial: int = 0,
+    newly_failing: int = 0,
+    include_results: bool = True,
 ) -> str:
     """The ANALYZE decision point.  The progress the patch made is stated first
     (2a.1): a weaker model offered a revert took it on a patch that had fixed
@@ -175,9 +180,14 @@ def analyze_prompt(
         )
     else:
         progress = "Progress so far: your change fixed none of the initially failing tests."
+    results = (
+        f"Test results with your change in place:\n{summary.strip()}\n\n"
+        if include_results
+        else "The test results with your change in place are in the working state above.\n\n"
+    )
     return (
         "Phase: ANALYZE. No tools in this phase.\n"
-        f"Test results with your change in place:\n{summary.strip()}\n\n"
+        f"{results}"
         f"{progress}\n\n"
         "Reply with JSON only:\n"
         '{"diagnosis": "why the tests still fail, in one or two sentences", '

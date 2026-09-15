@@ -27,6 +27,7 @@ from typing import Any, Protocol
 from evals.benchmark.schema import Task
 from repopilot.agent.baseline import BaselineAgent
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget
+from repopilot.agent.context import ContextConfig
 from repopilot.agent.policies import DEFAULT_LIMITS as DEFAULT_RUNTIME_LIMITS
 from repopilot.agent.policies import RuntimeLimits
 from repopilot.agent.prompts import TaskInput
@@ -126,13 +127,24 @@ class BaselineSolver(AgentSolver):
 
 @dataclass
 class StructuredSolver(AgentSolver):
-    """Phase 2: ``StructuredAgent``, the state-machine runtime."""
+    """Phase 2: ``StructuredAgent``, the state-machine runtime.
+
+    ``context`` selects the context strategy (spec §12.3): ``full`` replays the
+    conversation, ``compact`` rebuilds each prompt from the working state.
+    """
 
     name = "structured"
     runtime_limits: RuntimeLimits = DEFAULT_RUNTIME_LIMITS
+    context: str = "full"
 
     def make_agent(self, client: ModelClient, toolbox: Toolbox) -> Agent:
-        return StructuredAgent(client, toolbox, self.budget, limits=self.runtime_limits)
+        return StructuredAgent(
+            client,
+            toolbox,
+            self.budget,
+            limits=self.runtime_limits,
+            context=ContextConfig(mode=self.context),
+        )
 
 
 SOLVERS: dict[str, type[Any]] = {

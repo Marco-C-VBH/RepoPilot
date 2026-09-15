@@ -26,6 +26,12 @@ from typing import Any
 
 from repopilot.agent.baseline import DEFAULT_MAX_OUTPUT_TOKENS
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget, BudgetTracker
+from repopilot.agent.context import (
+    DEFAULT_CONTEXT,
+    ContextConfig,
+    compact_messages,
+    render_state,
+)
 from repopilot.agent.policies import (
     DEFAULT_LIMITS,
     PHASE_TOOLS,
@@ -42,6 +48,7 @@ from repopilot.agent.prompts import (
     LOCALIZE_INSTRUCTIONS,
     NO_EDIT_NUDGE,
     PATCH_INSTRUCTIONS,
+    PLAN_INSTRUCTIONS,
     RUNTIME_SYSTEM_PROMPT,
     TaskInput,
     analyze_prompt,
@@ -78,6 +85,7 @@ class StructuredAgent:
         budget: AgentBudget = DEFAULT_BUDGET,
         *,
         limits: RuntimeLimits = DEFAULT_LIMITS,
+        context: ContextConfig = DEFAULT_CONTEXT,
         max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
         system_prompt: str = RUNTIME_SYSTEM_PROMPT,
     ) -> None:
@@ -85,6 +93,7 @@ class StructuredAgent:
         self.toolbox = toolbox
         self.budget = budget
         self.limits = limits
+        self.context = context
         self.max_output_tokens = max_output_tokens
         self.system_prompt = system_prompt
 
@@ -107,7 +116,10 @@ class _Execution:
         self.state = AgentState(task.task_id)
         self.loops = LoopDetector(agent.limits)
         self.specs = {spec.name: spec for spec in self.toolbox.specs()}
-        self.messages: list[Message] = [system(agent.system_prompt)]
+        self.context = agent.context
+        self.messages: list[Message] = [system(agent.system_prompt)]  # the full history
+        self.meta: list[tuple[int, str]] = [(0, "system")]  # (step, kind) per message
+        self.instruction = ""  # the current phase's instructions (compact mode re-sends them)
         self.invalid_tool_calls = 0
         self.edits = self.failed_edits = self.tolerant_edits = 0
         self.files_read: list[str] = []
@@ -124,6 +136,7 @@ class _Execution:
             provider=self.client.provider,
             budget=self.budget.to_record(),
             limits=self.limits.to_record(),
+            context=self.context.to_record(),
             tools=list(MODEL_TOOLS),
             runtime="structured",
         )
@@ -174,13 +187,15 @@ class _Execution:
 
     def plan(self) -> Termination | None:
         self.enter(Phase.PLAN)
-        self.messages.append(
+        self.append(
             user(
                 plan_prompt(
                     self.task, self.last_test_output, suite_green=self.state.suite_was_green
                 )
-            )
+            ),
+            "prompt",
         )
+        self.instruction = PLAN_INSTRUCTIONS  # the compact state carries task + reproduction
         response = self.model_call(())
         if isinstance(response, Termination):
             return response
@@ -202,7 +217,7 @@ class _Execution:
     def localize(self, reason: str | None) -> Termination | None:
         self.enter(Phase.LOCALIZE, reason)
         allowed = PHASE_TOOLS[Phase.LOCALIZE]
-        self.messages.append(user(_with_note(LOCALIZE_INSTRUCTIONS, reason)))
+        self.instruct(_with_note(LOCALIZE_INSTRUCTIONS, reason))
         calls_this_visit = 0
         nudged = False
         forced = False
@@ -212,7 +227,7 @@ class _Execution:
                 forced = True
                 self.state.forced_transitions += 1
                 self.intervention("hypothesis_requested", calls=calls_this_visit)
-                self.messages.append(user(HYPOTHESIS_REQUEST))
+                self.append(user(HYPOTHESIS_REQUEST), "nudge")
             tools = () if forced else [self.specs[name] for name in allowed]
             response = self.model_call(tools)
             if isinstance(response, Termination):
@@ -240,7 +255,7 @@ class _Execution:
     def patch(self, reason: str | None) -> Termination | None:
         self.enter(Phase.PATCH, reason)
         allowed = PHASE_TOOLS[Phase.PATCH]
-        self.messages.append(user(_with_note(PATCH_INSTRUCTIONS, reason)))
+        self.instruct(_with_note(PATCH_INSTRUCTIONS, reason))
         tested = self.state.patches_tested[-1] if self.state.patches_tested else ""
         edits_this_visit = 0
         nudged = False
@@ -287,16 +302,13 @@ class _Execution:
         if active is not None:
             active.status = "tested"
         last = self.state.test_history[-1]
-        self.messages.append(
-            user(
-                analyze_prompt(
-                    self.last_test_output,
-                    fixed=len(last.fixed),
-                    initial=len(self.state.initial_failures),
-                    newly_failing=len(last.newly_failing),
-                )
-            )
-        )
+        progress = {
+            "fixed": len(last.fixed),
+            "initial": len(self.state.initial_failures),
+            "newly_failing": len(last.newly_failing),
+        }
+        self.append(user(analyze_prompt(self.last_test_output, **progress)), "instruction")
+        self.instruction = analyze_prompt("", include_results=False, **progress)
         response = self.model_call(())
         if isinstance(response, Termination):
             return response
@@ -304,6 +316,8 @@ class _Execution:
         next_phase = parsed.get("next") if parsed.get("next") in ("patch", "localize") else "patch"
         keep_patch = parsed.get("keep_patch") is not False
         diagnosis = str(parsed.get("diagnosis") or clip(response.text.strip(), 400))
+        if diagnosis:
+            self.state.diagnoses.append(diagnosis)
         self.trace.add(
             "decision",
             step=self.tracker.steps,
@@ -325,7 +339,7 @@ class _Execution:
 
     def finalize(self) -> tuple[str, str | None] | Termination:
         self.enter(Phase.FINALIZE)
-        self.messages.append(user(FINALIZE_INSTRUCTIONS))
+        self.instruct(FINALIZE_INSTRUCTIONS)
         response = self.model_call(())
         if isinstance(response, Termination):
             return response
@@ -370,9 +384,10 @@ class _Execution:
         self.state.count_step()
         choice = "auto" if tools else "none"
         offered = list(tools) if tools else [self.specs[name] for name in MODEL_TOOLS]
+        messages = self.prompt_messages()
         try:
             response = self.client.complete(
-                self.messages,
+                messages,
                 tools=offered,
                 max_tokens=self.agent.max_output_tokens,
                 tool_choice=choice,
@@ -386,6 +401,11 @@ class _Execution:
             "model_call",
             step=self.tracker.steps,
             phase=str(self.state.phase),
+            context={
+                "mode": self.context.mode,
+                "messages": len(messages),
+                "chars": sum(len(m.content) for m in messages),
+            },
             **response.to_record(),
             text=clip(response.text),
             calls=[
@@ -393,7 +413,7 @@ class _Execution:
                 for c in response.tool_calls
             ],
         )
-        self.messages.append(response.as_message())
+        self.append(response.as_message(), "assistant")
         if response.text:
             self.final_text = response.text
         if not response.tool_calls:
@@ -402,6 +422,37 @@ class _Execution:
         # budget after: the tokens are already paid for, the calls are free, and
         # an edit in that last reply must reach the workspace (issue #7).
         return response
+
+    def append(self, message: Message, kind: str) -> None:
+        """Add to the full history, tagged with the step it belongs to and its kind."""
+        self.messages.append(message)
+        self.meta.append((self.tracker.steps, kind))
+
+    def instruct(self, text: str) -> None:
+        """A phase's instructions: appended once to the history, re-sent each compact turn."""
+        self.append(user(text), "instruction")
+        self.instruction = text
+
+    def prompt_messages(self) -> list[Message]:
+        """What the model sees this step: the full history, or the compact rebuild."""
+        if not self.context.compact:
+            return self.messages
+        state_text = render_state(
+            self.task,
+            self.state,
+            self.tracker,
+            self.context,
+            diff=self.toolbox.workspace.diff(),
+        )
+        return compact_messages(
+            system_prompt=self.agent.system_prompt,
+            state_text=state_text,
+            instruction=self.instruction,
+            history=self.messages,
+            meta=self.meta,
+            current_step=self.tracker.steps,
+            window_steps=self.context.window_steps,
+        )
 
     def spent(self) -> Termination | None:
         """The token or cost limit crossed by the model calls so far, as a termination."""
@@ -440,6 +491,14 @@ class _Execution:
                 if call.name == "read_file":
                     self.files_read.append(path)
                     self.state.visit(path)
+                    self.state.reads.append(
+                        (path, int(result.meta.get("start", 1)), int(result.meta.get("end", 0)))
+                    )
+                elif call.name in ("search_code", "search_symbol", "find_references"):
+                    query = call.arguments.get("query") or call.arguments.get("name")
+                    query = query or call.arguments.get("symbol") or ""
+                    if query:
+                        self.state.searches.append(str(query))
                 elif call.name == "edit_file":
                     self.files_edited.append(path)
                     self.state.visit(path)
@@ -462,11 +521,12 @@ class _Execution:
                 meta={k: v for k, v in result.meta.items() if k != "invalid"},
                 output=clip(result.output),
             )
-            self.messages.append(tool_result(call.id, result.output, is_error=result.is_error))
+            self.append(tool_result(call.id, result.output, is_error=result.is_error), "tool")
             if termination is not None:
                 for skipped in calls[index + 1 :]:
-                    self.messages.append(
-                        tool_result(skipped.id, "the run is ending; not executed", is_error=True)
+                    self.append(
+                        tool_result(skipped.id, "the run is ending; not executed", is_error=True),
+                        "tool",
                     )
                 break
         self.state.repeated_tool_calls = self.loops.repeats()
@@ -576,7 +636,7 @@ class _Execution:
     def nudge(self, text: str) -> None:
         self.state.nudges += 1
         self.intervention("nudge", text=text)
-        self.messages.append(user(text))
+        self.append(user(text), "nudge")
 
     def intervention(self, name: str, **data: Any) -> None:
         self.trace.add(
@@ -593,6 +653,7 @@ class _Execution:
         runtime = {
             **self.state.to_record(),
             "limits": self.limits.to_record(),
+            "context": self.context.to_record(),
             "verified": verified,
             "steps_after_green": (self.tracker.steps - first_green) if first_green else 0,
             "transitions": self.state.transitions,

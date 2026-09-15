@@ -68,6 +68,7 @@ class RunSummary(BaseModel):
     results_dir: str
     model: str | None = None
     budget: dict[str, object] | None = None
+    context: str | None = None  # structured solver: full | compact (spec §12.3)
     agent: dict[str, object] | None = None
     stopped_early: str | None = None  # why the run ended before every task ran
 
@@ -97,6 +98,13 @@ def build_parser() -> argparse.ArgumentParser:
     agent = parser.add_argument_group("agent solvers")
     agent.add_argument(
         "--model", help="model id for the agent (default: REPOPILOT_STRONG_MODEL or the built-in)"
+    )
+    agent.add_argument(
+        "--context",
+        choices=("full", "compact"),
+        default="full",
+        help="structured solver only: replay the full history, or rebuild each prompt from "
+        "the working state plus the last few tool steps (default full)",
     )
     agent.add_argument(
         "--max-steps", type=int, help=f"model calls per task (default {DEFAULT_BUDGET.max_steps})"
@@ -172,7 +180,9 @@ def run_benchmark(
     if isinstance(solver, AgentSolver):
         b = solver.budget
         print(
-            f"model={solver.model} budget: {b.max_steps} steps, {b.max_tool_calls} tool calls, "
+            f"model={solver.model}"
+            + (f" context={solver.context}" if getattr(solver, "context", "full") != "full" else "")
+            + f" budget: {b.max_steps} steps, {b.max_tool_calls} tool calls, "
             f"{b.max_test_runs} test runs, {b.max_tokens} tokens, ${b.max_cost_usd:.2f}, "
             f"{b.max_runtime_seconds:.0f}s per task"
             + (f"; run cap ${max_run_cost:.2f}" if max_run_cost is not None else "")
@@ -210,6 +220,7 @@ def run_benchmark(
     if isinstance(solver, AgentSolver):
         summary.model = solver.model
         summary.budget = solver.budget.to_record()
+        summary.context = getattr(solver, "context", None)
     summary.agent = agent_metrics(tasks, results)
     summary.stopped_early = stopped_early
     (out_dir / "summary.json").write_text(summary.model_dump_json(indent=2), encoding="utf-8")
@@ -310,9 +321,16 @@ def build_solver(args: argparse.Namespace) -> Solver:
     load_env(args.env_file)
     settings = ModelSettings.from_env(strong=args.model)
     api_key_for(provider_for(settings.strong))  # both agents use the strong model only
-    return get_solver(
-        args.solver, model=settings.strong, budget=budget_from_args(args), cache_dir=args.cache_dir
-    )
+    options: dict[str, object] = {
+        "model": settings.strong,
+        "budget": budget_from_args(args),
+        "cache_dir": args.cache_dir,
+    }
+    if args.context != "full":
+        if args.solver != "structured":
+            raise ConfigError("--context is a structured-solver option")
+        options["context"] = args.context
+    return get_solver(args.solver, **options)
 
 
 def main(argv: list[str] | None = None) -> int:

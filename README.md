@@ -12,9 +12,9 @@ with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
 Phase 2a (structured runtime) and 2a.1 (tolerant edits) — done and measured
-against the baseline, results below; next: 2b (context compaction).** Every
-number here is measured by a run archived under `evals/experiments/`; nothing
-is a placeholder.
+against the baseline, results below; 2b (context compaction) — built,
+runs pending.** Every number here is measured by a run archived under
+`evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
 
@@ -174,6 +174,7 @@ uv run python -m evals.runner --solver baseline --ids cachetools_004 --max-run-c
 uv run python -m evals.runner --solver baseline --max-run-cost 10                       # all tasks
 uv run python -m evals.runner --solver baseline --model gpt-5.6-terra --max-steps 20    # variations
 uv run python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10  # Phase 2a runtime
+uv run python -m evals.runner --solver structured --context compact --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # 2b
 ```
 
 The agent works on a host-side git checkout of the buggy tree (`repopilot/tools/`)
@@ -379,9 +380,15 @@ beforehand in `docs/runtime-design.md`:
   binding constraint is context: the full history is replayed on every step.
   That is Phase 2b.
 
-Next: **2b** — context compaction (spec §8.1 / §12.3): the structured state
-plus the last few tool results instead of the full history, measured on tokens
-per task with success held constant, Haiku first.
+- **2b — context compaction** (`--context compact`, built; pre-registered in
+  `docs/runtime-design.md` §8, runs pending). Every model call is rebuilt from
+  the runtime's working state (task, initial failures one line each, plan,
+  hypotheses, diagnoses, files read as line ranges, searches, the current diff,
+  the latest test run, budget left) plus the last three tool-calling steps
+  verbatim and the current phase's instructions; nothing is summarised by a
+  model. A replay of the 2a.1 traces predicts 55–60% of today's cumulative
+  tokens and long runs at 40–45k instead of ~100k; the expectation is written
+  down before the run, with `cachetools_003` as the named test case.
 
 ## RepoPilot-Bench v0
 
@@ -453,6 +460,8 @@ repopilot/                 library
   agent/state.py           AgentState (spec §5.2): plan, hypotheses, test history, counters; Phase
   agent/policies.py        phase tool sets, per-phase limits, LoopDetector (spec §9.2), JSON parsing
   agent/runtime.py         StructuredAgent: the state machine (Phase 2a, the treatment arm)
+  agent/context.py         context strategies (spec §8 / §12.3): full history, or the working
+                           state + the last K tool steps rebuilt every call (Phase 2b)
   tracing/events.py        Trace: JSONL events (model_call, tool_call, phase, test_run, decision,
                            intervention, state, patch, run_end)
   sandbox/limits.py        resource limits applied to every sandbox container

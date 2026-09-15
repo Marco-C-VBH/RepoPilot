@@ -79,7 +79,10 @@ class AgentState:
     plan: list[str] = field(default_factory=list)
     suspects: list[str] = field(default_factory=list)
     hypotheses: list[Hypothesis] = field(default_factory=list)
+    diagnoses: list[str] = field(default_factory=list)  # ANALYZE replies, in order
     visited_files: list[str] = field(default_factory=list)
+    reads: list[tuple[str, int, int]] = field(default_factory=list)  # (path, start, end)
+    searches: list[str] = field(default_factory=list)  # queries / names looked up
     initial_failures: list[str] = field(default_factory=list)
     test_history: list[TestSummary] = field(default_factory=list)
     patches_tested: list[str] = field(default_factory=list)  # diffs at each verify run
@@ -130,6 +133,7 @@ class AgentState:
             "plan": self.plan,
             "suspects": self.suspects,
             "hypotheses": [h.to_record() for h in self.hypotheses],
+            "diagnoses": [clip(d, 400) for d in self.diagnoses],
             "initial_failures": len(self.initial_failures),
             "test_history": [t.to_record() for t in self.test_history],
             "steps_by_phase": dict(self.steps_by_phase),
@@ -145,6 +149,8 @@ class AgentState:
         }
         if full:
             record["visited_files"] = list(self.visited_files)
+            record["reads"] = [list(r) for r in self.reads]
+            record["searches"] = list(self.searches)
             record["initial_failing_tests"] = self.initial_failures[:50]
             record["transitions"] = list(self.transitions)
         return record
