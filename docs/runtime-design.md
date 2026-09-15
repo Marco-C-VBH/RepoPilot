@@ -120,3 +120,48 @@ runtime did not address the real failure mode and the traces say what did.
 Context compaction (§8.1 / §12.3), model routing (§12.4), retrieval (§7), any
 change to the tool surface. The baseline agent is untouched; it is the control
 arm.
+
+## 6. Results (2026-09-14) against the expectations above
+
+Runs: `evals/experiments/structured-v0-haiku45` (after the issue #7 fix; the
+run before it is `structured-v0-haiku45-run1`), `structured-v0-luna`,
+`structured-v0-sonnet5`; baselines `baseline-v0-*`.
+
+| model | expected | measured | verdict |
+|---|---|---|---|
+| claude-haiku-4-5 | 14 / 14; 0 budget terminations; fewer steps; loop interventions > 0 | 12 / 14 (both runs); `budget_tokens` 6 → 2 (one of them a PASS); steps 14.3 → 12.3; tokens 90.8k → 60.9k; cost $0.105 → $0.067; loop interventions 1 (`toolz_001`); steps after green 0 | efficiency as expected, success **not** met |
+| gpt-5.6-luna | 14 / 14; invalid rate ≈ unchanged; steps 7–9 | 14 / 14; invalid 8.3% → 10.8%; steps 7.7 → 8.1; cost +55% on $0.003 | as expected (cost not pre-registered) |
+| claude-sonnet-5 | 14 / 14; steps +1 to +2; cost within +20% | 14 / 14; steps 5.9 → 6.9; cost +19%; tool calls ≈5 → 3.9 | as expected |
+
+What the two Haiku failures per run were (trace paths under the archives):
+
+- `toolz_001`, both runs: localization right by step 5–6, then 5–7 `edit_file`
+  calls whose `old_string` never matched — the continuation line of the target
+  statement is indented 15 spaces in the file, the model alternated between
+  4- and 5-space renderings copied from the numbered `read_file` listing. Run
+  1 eventually matched a shorter string and changed the wrong sub-expression;
+  run 2 repeated an identical call a fourth time and the loop detector ended
+  it (`agent_loop`). A tool-interface problem (spec §6), not a control problem.
+- `tenacity_004`, run 1: the reply that crossed the token cap carried the
+  correct edit and the runtime discarded it (issue #7). Passed on the re-run.
+- `cachetools_003`, run 2: the first patch fixed both initially failing tests
+  and broke `test_missing_getsizeof`; ANALYZE answered `keep_patch: false,
+  next: localize`, the runtime reverted the workspace as asked, and the
+  re-localization (reads of 100–150 lines, replayed every step) ran the token
+  budget out at step 15 with no patch. The baseline's Haiku had passed this
+  task by patching the guard on its first patch.
+
+Reading: the runtime removed the failure modes it targeted (exploration after
+green, analysis without an edit, budget terminations without a patch) and the
+efficiency numbers moved by a third; the remaining Haiku failures are exact-text
+editing and context growth, plus one revert decision the runtime made too easy
+to take. Success on 14 tasks with this much run-to-run variance (the failing
+tasks differ between the two structured runs) cannot separate 11 / 14 from
+12 / 14; a claim about success needs `--repeat` on both arms.
+
+Next: **2a.1** — `edit_file` falls back to a whitespace-tolerant match (exactly
+one candidate after stripping leading whitespace per line) and its error shows
+the closest region of the file; the ANALYZE prompt states what the patch fixed
+and broke before offering the revert. **2b** — context compaction (§8.1 /
+§12.3): the structured state instead of the full history, measured on tokens
+per task at constant success. Both measured on Haiku first, with repeats.

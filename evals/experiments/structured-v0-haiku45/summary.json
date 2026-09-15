@@ -1,0 +1,130 @@
+{
+  "run_id": "structured-20260914-215305-cb3c",
+  "solver": "structured",
+  "tasks": 14,
+  "repeat": 1,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 2,
+    "PASS": 12
+  },
+  "pass_rate": 0.8571,
+  "deterministic": null,
+  "nondeterministic_tasks": [],
+  "duration_seconds": 363.836,
+  "started_at": "2026-09-15T01:53:05+00:00",
+  "finished_at": "2026-09-15T01:59:09+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/structured-20260914-215305-cb3c",
+  "model": "claude-haiku-4-5-20251001",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "agent": {
+    "results": 14,
+    "success_rate": 0.8571,
+    "patch_rate": 0.8571,
+    "regression_rate": 0.0,
+    "avg_steps": 12.286,
+    "avg_tool_calls": 9.786,
+    "avg_test_runs": 2.0,
+    "invalid_tool_call_rate": 0.0,
+    "terminations": {
+      "done": 11,
+      "budget_tokens": 2,
+      "agent_loop": 1
+    },
+    "tokens_mean": 65620,
+    "tokens_median": 60872,
+    "cost_total_usd": 1.032,
+    "cost_mean_usd": 0.074,
+    "cost_median_usd": 0.0673,
+    "solve_p50_seconds": 25.4,
+    "solve_p95_seconds": 30.9,
+    "failures": {
+      "agent_loop": 1,
+      "budget_exceeded": 1
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 2,
+        "total": 2
+      },
+      "exception_handling": {
+        "pass": 2,
+        "total": 2
+      },
+      "missing_check": {
+        "pass": 2,
+        "total": 2
+      },
+      "off_by_one": {
+        "pass": 1,
+        "total": 2
+      },
+      "retry_logic": {
+        "pass": 2,
+        "total": 2
+      },
+      "state_management": {
+        "pass": 1,
+        "total": 2
+      },
+      "wrong_condition": {
+        "pass": 2,
+        "total": 2
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "pass": 2,
+        "total": 3
+      },
+      "hard": {
+        "pass": 3,
+        "total": 3
+      },
+      "medium": {
+        "pass": 7,
+        "total": 8
+      }
+    },
+    "runtime": {
+      "results": 14,
+      "verified_rate": 0.7857,
+      "loop_rate": 0.0714,
+      "intervention_rate": 0.2857,
+      "avg_steps_after_green": 0.0,
+      "avg_initial_failures": 7.214,
+      "steps_by_phase": {
+        "analyze": 3,
+        "finalize": 2,
+        "localize": 101,
+        "patch": 52,
+        "plan": 14
+      },
+      "loop_interventions": 1,
+      "repeated_tool_calls": 5,
+      "refused_tool_calls": 0,
+      "forced_transitions": 3,
+      "nudges": 0,
+      "analyze_rounds": 3,
+      "workspace_resets": 2,
+      "finalize_continues": 0
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/structured-20260914-215305-cb3c"
+}

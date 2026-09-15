@@ -10,9 +10,9 @@ The point is not the LLM call. The point is measurement: task success on a
 deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy,
 with every added feature justified by an ablation.
 
-**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done,
-results below; Phase 2a (structured runtime) — built and unit-tested, benchmark
-runs pending.** Every number here is measured by a run archived under
+**Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
+Phase 2a (structured runtime) — done and measured against the baseline, results
+below.** Every number here is measured by a run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -57,6 +57,31 @@ Two findings, both about what v0 can and cannot measure:
    success, invalid-call rate, tokens per task.
 
 Details in [Phase 1 findings](#phase-1-findings).
+
+### Structured runtime vs. baseline (Phase 2a, spec §12.2)
+
+Same 14 tasks, same budget, same models; the runtime owns reproduction,
+verification, termination, phase tool sets and loop detection (details in
+[The structured runtime](#the-structured-runtime-phase-2a)):
+
+| model | arm | success | steps | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | invalid tool calls |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-haiku-4-5` | baseline | 11 / 14 | 14.3 | 90.8k | $0.105 | 27 s | 6 / 14 | 0.0% |
+| | **structured** | **12 / 14** | 12.3 | 60.9k | $0.067 | 25 s | 2 / 14 (+1 loop) | 0.0% |
+| `gpt-5.6-luna` | baseline | 14 / 14 | 7.7 | 33.7k | $0.003 | 18 s | 0 | 8.3% |
+| | **structured** | **14 / 14** | 8.1 | 39.0k | $0.004 | 20 s | 0 | 10.8% |
+| `claude-sonnet-5` | baseline (3 × 14) | 42 / 42 | 5.9 | 18.7k | $0.045 | 15 s | 0 | 1.4% |
+| | **structured** | **14 / 14** | 6.9 | 22.4k | $0.053 | 16 s | 0 | 0.0% |
+
+Archived as `evals/experiments/structured-v0-*/`. The runtime moved what it was
+built to move — on Haiku, budget terminations 6 → 2, tokens per task −33%,
+cost −36%, and no run kept exploring after its tests were green — but success
+rate stayed within one task of the baseline (one task is 7 points), and the
+capable models paid for the structure: one extra step (PLAN) and +19% (Sonnet)
+/ +55% (luna, on $0.003) cost, with luna's invented-argument rate unchanged as
+predicted. The pre-registered expectation of 14 / 14 for Haiku was not met; the
+traces say why in [Phase 2a findings](#phase-2a-findings), and they point at
+the two next changes: tolerant exact-text edits and context compaction.
 
 ## Setup
 
@@ -276,8 +301,59 @@ fate, each test run's fixed / still-failing / newly-failing sets and the
 intervention counters (`agent.runtime` in `results.jsonl`, `phase` / `decision`
 / `test_run` / `intervention` / `state` events in the trace); the summary adds
 `verified_rate`, `loop_rate`, steps by phase and the intervention totals.
-Results against the baseline, on the same three models, will be reported here
-once the runs are archived.
+### Phase 2a findings
+
+Runs of 2026-09-14 (`evals/experiments/structured-v0-haiku45/`, `-luna/`,
+`-sonnet5/`; the first Haiku run, made before the fix of issue #7, is kept as
+`structured-v0-haiku45-run1`). Read against the expectations written down
+beforehand in `docs/runtime-design.md`:
+
+- **The controls did their job.** No structured run spent a step after its
+  tests were green (the baseline's Haiku wasted 8 steps on `toolz_003` alone);
+  Haiku's `budget_tokens` terminations fell from 6 to 2 in both structured
+  runs, and one of those two still passed because its last edit was in place
+  when the cap hit. Two runs needed the runtime to ask for the hypothesis after
+  10 localization calls; two reverted a patch on request; one hit the loop
+  detector.
+- **Success did not move beyond noise.** Haiku: 11 / 14 → 12 / 14 in both
+  structured runs, but with different failures each time (`tenacity_004` +
+  `toolz_001`, then `cachetools_003` + `toolz_001`), while the baseline's three
+  failures (`cachetools_005`, `tenacity_003`, `tenacity_004`) all passed under
+  the runtime. With 14 tasks and a model this variable, the success metric
+  needs repeats before it says anything; the efficiency metrics already do.
+- **What still fails, from the traces.** (1) *Exact-text edits*: `toolz_001`
+  failed both times the same way — 7 `edit_file` calls alternating between a
+  4- and a 5-space indentation copied from the numbered listing, none matching
+  the file's 15-space continuation line; the second run ended as `agent_loop`
+  when the identical call came back a fourth time. Across the 130 traces of
+  both arms, 14 `edit_file` calls failed on whitespace — none in the baseline
+  runs, 12 in the structured Haiku runs (10 of them on `toolz_001`), 2 in
+  luna's. (2) *Context
+  growth*: a 15-step run whose reads replay 100–150 lines each still reaches
+  100k tokens (`cachetools_003`: 103k at step 15, no patch left). (3) *A poor
+  decision the runtime executed faithfully*: `cachetools_003`'s first patch
+  fixed both initially failing tests and broke one; ANALYZE chose "revert and
+  localize again", which threw the progress away and ran out the budget
+  reading. The baseline's Haiku had passed this task by patching the guard.
+- **One runtime bug, found by reading the first run.** `tenacity_004` ended
+  `budget_tokens` on the very reply that carried the correct edit, because the
+  cap was checked before the reply's tool calls ran (issue #7). Fixed: a reply's
+  tool calls execute first; the run then ends as `budget_tokens` with its patch
+  in the workspace, as the baseline always did. `tenacity_004` passed on the
+  re-run.
+- **Cost of structure on strong models.** Sonnet: 5.9 → 6.9 steps, $0.045 →
+  $0.053 (+19%, within the +20% pre-registered), tool calls ≈5 → 3.9 (the
+  runtime's reproduction run replaces the model's own test calls). luna: 7.7 →
+  8.1 steps, tokens +16% but cost +55% ($0.003 → $0.0045; the JSON decision
+  points cost it reasoning tokens), invalid calls 8.3% → 10.8% (14 of 129, the
+  same `edit_file(replacement=…)` habit; nothing in 2a targets it).
+
+Next, in order: **2a.1** — an `edit_file` that falls back to a
+whitespace-tolerant match when the exact text is not found, and an error
+message that shows the closest region of the file; plus an ANALYZE prompt that
+states the progress a patch made before offering to revert it. **2b** — context
+compaction (spec §8.1 / §12.3), measured on tokens per task with success held
+constant. Both are measured on Haiku first, where the failure modes live.
 
 ## RepoPilot-Bench v0
 
