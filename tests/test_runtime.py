@@ -446,6 +446,40 @@ def test_test_run_budget_ends_the_run_with_the_patch_kept(tmp_path: Path) -> Non
     assert len(refused) == 1
 
 
+def test_edit_in_the_reply_that_crosses_the_token_cap_is_still_applied(tmp_path: Path) -> None:
+    """Issue #7: tenacity_004 (Haiku) ended as budget_tokens on the very reply that
+    carried the correct edit_file call, and the edit never reached the workspace."""
+    toolbox = make_toolbox(tmp_path)
+    runner, _ = agent(
+        toolbox,
+        [
+            response(PLAN, tokens=100),
+            response(HYPOTHESIS, tokens=100),
+            response("", (EDIT,), tokens=1000),  # this reply crosses the cap
+            response("never reached"),
+        ],
+        budget=AgentBudget(max_tokens=900),
+    )
+    run = runner.run(TASK)
+
+    assert run.termination is Termination.BUDGET_TOKENS
+    assert ">= self.size" in run.patch  # the edit was executed before the termination
+    assert run.files_edited == ["demo/cache.py"] and run.test_runs == 1  # no verification
+    assert run.runtime["verified"] is False
+    policies = [e.data["policy"] for e in run.trace.events if e.kind == "tool_call"]
+    assert policies == ["executed"]
+
+    # A reply without tool calls that crosses the cap terminates at once, as before.
+    toolbox = make_toolbox(tmp_path / "b")
+    runner, _ = agent(
+        toolbox,
+        [response(PLAN, tokens=100), response(HYPOTHESIS, tokens=1000), response("never")],
+        budget=AgentBudget(max_tokens=900),
+    )
+    run = runner.run(TASK)
+    assert run.termination is Termination.BUDGET_TOKENS and run.steps == 2
+
+
 def test_step_budget_is_checked_before_every_model_call(tmp_path: Path) -> None:
     toolbox = make_toolbox(tmp_path)
     runner, _ = agent(

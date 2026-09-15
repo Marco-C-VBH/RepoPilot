@@ -8,6 +8,44 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 7 · Runtime dropped the edit that arrived in the reply crossing the token cap
+
+**Date:** 2026-09-15 · **Area:** structured runtime · **Severity:** medium (turned
+one solvable task into a `budget_tokens` failure)
+
+**Symptom.** First `--solver structured` run with `claude-haiku-4-5`
+(`results/structured-20260914-212220-be5f`): `tenacity_004` ended
+`budget_tokens` at step 16 with no patch. The trace shows step 16's reply
+carrying an `edit_file` call on `RetryError.reraise` — the right function and,
+by its text, the right change (`__cause__ or __context__`) — followed directly
+by `run_end`: no `tool_call` event, no diff.
+
+**Root cause.** `_Execution.model_call` checked the token / cost limits
+immediately after recording the reply and returned the termination *before*
+the reply's tool calls were executed. The baseline runs the tool loop first and
+checks the cumulative limits after it; the runtime inverted the order, so any
+run that crossed the cap on a reply with tool calls lost that reply's work.
+The tokens were already spent either way; executing the calls costs nothing.
+
+**Fix.** `repopilot/agent/runtime.py`: `model_call` only terminates on
+tokens / cost when the reply has no tool calls; when it has, the phase loop
+executes them and then asks `spent()`. A run that crosses the cap mid-turn still
+ends as `budget_tokens` (no verification run), but its last edit is in the
+workspace and the harness judges it — the same semantics as the baseline, where
+three of Haiku's `budget_tokens` runs passed on the patch they had in place.
+
+**Guard.** `tests/test_runtime.py::test_edit_in_the_reply_that_crosses_the_token_cap_is_still_applied`
+scripts exactly this: the reply that crosses the cap carries the edit; the
+patch must contain it and the termination must still be `budget_tokens`.
+
+**Lesson.** A budget check has a *position* in the loop, and the position is
+part of the budget's semantics. "Check after the model call" and "check after
+the step" differ by exactly the work the model just asked for. The first run of
+a new control loop should be read trace by trace before its numbers are
+compared with anything.
+
+---
+
 ## 6 · Live test for `tool_choice="none"`: the model obeyed, the test contradicted itself
 
 **Date:** 2026-09-15 · **Area:** model layer / tests · **Severity:** low (test only;

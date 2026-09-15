@@ -219,7 +219,7 @@ class _Execution:
             if response.tool_calls:
                 calls_this_visit += len(response.tool_calls)
                 termination, _ = self.execute_calls(response.tool_calls, allowed)
-                if termination:
+                if termination or (termination := self.spent()):
                     return termination
                 continue
             if response.stop_reason is StopReason.OTHER:
@@ -251,7 +251,7 @@ class _Execution:
                 edit_cap = self.limits.patch_edits - edits_this_visit
                 termination, edits = self.execute_calls(response.tool_calls, allowed, edit_cap)
                 edits_this_visit += edits
-                if termination:
+                if termination or (termination := self.spent()):
                     return termination
                 continue
             if response.stop_reason is StopReason.OTHER:
@@ -385,10 +385,19 @@ class _Execution:
         self.messages.append(response.as_message())
         if response.text:
             self.final_text = response.text
+        if not response.tool_calls:
+            return self.spent() or response
+        # With tool calls pending, the caller executes them first and checks the
+        # budget after: the tokens are already paid for, the calls are free, and
+        # an edit in that last reply must reach the workspace (issue #7).
+        return response
+
+    def spent(self) -> Termination | None:
+        """The token or cost limit crossed by the model calls so far, as a termination."""
         limit = self.tracker.exceeded()
         if limit in ("tokens", "cost"):
             return BUDGET_TERMINATION[limit]
-        return response
+        return None
 
     def execute_calls(
         self,
