@@ -109,6 +109,7 @@ class _Execution:
         self.specs = {spec.name: spec for spec in self.toolbox.specs()}
         self.messages: list[Message] = [system(agent.system_prompt)]
         self.invalid_tool_calls = 0
+        self.edits = self.failed_edits = self.tolerant_edits = 0
         self.files_read: list[str] = []
         self.files_edited: list[str] = []
         self.final_text = ""
@@ -285,7 +286,17 @@ class _Execution:
         active = self.state.active_hypothesis
         if active is not None:
             active.status = "tested"
-        self.messages.append(user(analyze_prompt(self.last_test_output)))
+        last = self.state.test_history[-1]
+        self.messages.append(
+            user(
+                analyze_prompt(
+                    self.last_test_output,
+                    fixed=len(last.fixed),
+                    initial=len(self.state.initial_failures),
+                    newly_failing=len(last.newly_failing),
+                )
+            )
+        )
         response = self.model_call(())
         if isinstance(response, Termination):
             return response
@@ -422,7 +433,9 @@ class _Execution:
             )
             if kind == "loop_terminated":
                 termination = Termination.AGENT_LOOP
-            elif kind == "executed" and not result.is_error:
+            elif kind == "executed" and result.is_error:
+                self.failed_edits += call.name == "edit_file"
+            elif kind == "executed":
                 path = call.arguments.get("path", "")
                 if call.name == "read_file":
                     self.files_read.append(path)
@@ -431,6 +444,8 @@ class _Execution:
                     self.files_edited.append(path)
                     self.state.visit(path)
                     edits += 1
+                    self.edits += 1
+                    self.tolerant_edits += result.meta.get("match") == "whitespace"
             self.trace.add(
                 "tool_call",
                 step=self.tracker.steps,
@@ -612,6 +627,9 @@ class _Execution:
             files_edited=sorted(set(self.files_edited)),
             trace=self.trace,
             runtime=runtime,
+            edits=self.edits,
+            failed_edits=self.failed_edits,
+            tolerant_edits=self.tolerant_edits,
         )
 
 

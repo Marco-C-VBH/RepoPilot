@@ -97,6 +97,9 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
     regressions = sum(1 for r in with_agent if Reason.PASS_TO_PASS_REGRESSED in r.reasons)
     tool_calls = sum(int(a.get("tool_calls", 0)) for a in records)
     invalid = sum(int(a.get("invalid_tool_calls", 0)) for a in records)
+    edits = sum(int(a.get("edits", 0)) for a in records)
+    failed_edits = sum(int(a.get("failed_edits", 0)) for a in records)
+    tolerant_edits = sum(int(a.get("tolerant_edits", 0)) for a in records)
     costs = [float(a.get("cost_usd", 0.0)) for a in records]
     tokens = [int(a.get("input_tokens", 0)) + int(a.get("output_tokens", 0)) for a in records]
     solve_times = [float(r.durations.get("solve", 0.0)) for r in with_agent]
@@ -129,6 +132,12 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
         "avg_tool_calls": _mean([int(a.get("tool_calls", 0)) for a in records]),
         "avg_test_runs": _mean([int(a.get("test_runs", 0)) for a in records]),
         "invalid_tool_call_rate": round(invalid / tool_calls, 4) if tool_calls else 0.0,
+        "edits": edits,
+        "failed_edits": failed_edits,
+        "tolerant_edits": tolerant_edits,
+        "edit_failure_rate": (
+            round(failed_edits / (edits + failed_edits), 4) if edits + failed_edits else 0.0
+        ),
         "terminations": dict(Counter(str(a.get("termination", "?")) for a in records)),
         "tokens_mean": round(_mean(tokens)),
         "tokens_median": round(_median(tokens)),
@@ -200,7 +209,9 @@ def format_agent_metrics(metrics: dict[str, Any]) -> str:
         f"agent: success {m['success_rate']:.1%} · patch rate {m['patch_rate']:.1%} · "
         f"regressions {m['regression_rate']:.1%}",
         f"  steps {m['avg_steps']:.1f} · tool calls {m['avg_tool_calls']:.1f} "
-        f"(invalid {m['invalid_tool_call_rate']:.1%}) · test runs {m['avg_test_runs']:.1f}",
+        f"(invalid {m['invalid_tool_call_rate']:.1%}) · test runs {m['avg_test_runs']:.1f} · "
+        f"edits {m.get('edits', 0)} (failed {m.get('failed_edits', 0)}, tolerant "
+        f"{m.get('tolerant_edits', 0)})",
         f"  tokens median {m['tokens_median']:,} · cost median ${m['cost_median_usd']:.3f} "
         f"total ${m['cost_total_usd']:.2f} · solve p50 {m['solve_p50_seconds']:.0f}s "
         f"p95 {m['solve_p95_seconds']:.0f}s",

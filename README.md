@@ -348,12 +348,15 @@ beforehand in `docs/runtime-design.md`:
   points cost it reasoning tokens), invalid calls 8.3% → 10.8% (14 of 129, the
   same `edit_file(replacement=…)` habit; nothing in 2a targets it).
 
-Next, in order: **2a.1** — an `edit_file` that falls back to a
-whitespace-tolerant match when the exact text is not found, and an error
-message that shows the closest region of the file; plus an ANALYZE prompt that
-states the progress a patch made before offering to revert it. **2b** — context
-compaction (spec §8.1 / §12.3), measured on tokens per task with success held
-constant. Both are measured on Haiku first, where the failure modes live.
+Next, in order: **2a.1** (built; runs pending — pre-registered in
+`docs/runtime-design.md` §7) — an `edit_file` that falls back to a unique
+whitespace-tolerant match when the exact text is not found, re-indents the
+replacement to the file and reports it, an error that shows the closest region
+of the file verbatim, and an ANALYZE prompt that states the progress a patch
+made before offering to revert it; both arms count `edits`, `failed_edits`
+and `tolerant_edits`. **2b** — context compaction (spec §8.1 / §12.3),
+measured on tokens per task with success held constant. Both are measured on
+Haiku first, where the failure modes live.
 
 ## RepoPilot-Bench v0
 
@@ -415,6 +418,7 @@ repopilot/                 library
   models/pricing.py        $/MTok table -> estimate_cost; models/ledger.py totals + budget caps
   tools/workspace.py       host-side git working copy of the buggy tree (edits live here)
   tools/code.py            read_file, search_code, search_symbol (ast index), find_references, edit_file
+                           (exact match, else a unique whitespace-tolerant match re-indented to the file)
   tools/toolbox.py         the six tool schemas the model sees + dispatch/validation + run_tests
                            (workspace diff -> sandbox -> per-test summary)
   agent/budget.py          AgentBudget (spec §9.1) + BudgetTracker

@@ -235,11 +235,80 @@ def test_edit_file_replaces_exactly_one_occurrence(workspace: Workspace) -> None
     assert result.meta == {
         "path": "demo/cache.py",
         "line": 10,
+        "match": "exact",
         "removed_lines": 1,
         "added_lines": 1,
     }
     assert ">= self.size" in workspace.read_text("demo/cache.py")
     assert workspace.changed_files() == ["demo/cache.py"]
+
+
+def test_edit_file_tolerates_indentation_mistakes_and_reindents(workspace: Workspace) -> None:
+    """Phase 2a.1: the toolz_001 pattern -- the model miscounts leading whitespace."""
+    # The model over-indents the first line by one and drops the body's indentation
+    # entirely; the stripped lines still identify the block uniquely.
+    result = code.edit_file(
+        workspace,
+        "demo/cache.py",
+        "         if len(self.items) > self.size:\n  self.items.pop(next(iter(self.items)))",
+        "         if len(self.items) >= self.size:\n  self.items.pop(next(iter(self.items)))",
+    )
+    assert not result.is_error, result.output
+    assert result.meta["match"] == "whitespace"
+    assert "matched only after ignoring indentation differences" in result.output
+    text = workspace.read_text("demo/cache.py")
+    # The changed line takes the file's real indentation (8 spaces), the kept line its own (12).
+    assert "\n        if len(self.items) >= self.size:\n" in text
+    assert "\n            self.items.pop(next(iter(self.items)))\n" in text
+    assert "         if" not in text and "\n  self.items" not in text
+    assert workspace.changed_files() == ["demo/cache.py"]
+
+    # A brand-new line follows the first line's offset; a trailing newline in
+    # old_string and new_string is handled symmetrically.
+    result = code.edit_file(
+        workspace,
+        "demo/cache.py",
+        "def get(self, key, default=None):\n    return self.items.get(key, default)\n",
+        "def get(self, key, default=None):\n    self.hits = getattr(self, 'hits', 0) + 1\n"
+        "    return self.items.get(key, default)\n",
+    )
+    assert not result.is_error, result.output
+    assert result.meta["match"] == "whitespace" and result.meta["added_lines"] == 3
+    text = workspace.read_text("demo/cache.py")
+    assert (
+        "    def get(self, key, default=None):\n"
+        "        self.hits = getattr(self, 'hits', 0) + 1\n"
+        "        return self.items.get(key, default)\n"
+    ) in text
+    assert "\n\n\ndef make_cache" in text  # no blank line added or lost around the block
+
+    # Exact matches still win, and a tolerant match must be unique.
+    exact = code.edit_file(workspace, "demo/cache.py", "DEFAULT_SIZE = 3", "DEFAULT_SIZE = 4")
+    assert not exact.is_error and exact.meta["match"] == "exact"
+    workspace.write_text("demo/dup.py", "x = 1\nif y:\n    x = 1\n")
+    ambiguous = code.edit_file(workspace, "demo/dup.py", "x = 1 ", "x = 2")  # trailing space
+    assert ambiguous.is_error and "matches 2 places" in ambiguous.output
+
+
+def test_edit_file_not_found_shows_the_closest_region(workspace: Workspace) -> None:
+    result = code.edit_file(
+        workspace,
+        "demo/cache.py",
+        "        if len(self.items) > self.size():\n            self.items.pop()",
+        "x",
+    )
+    assert result.is_error
+    assert "old_string was not found in demo/cache.py, not even ignoring" in result.output
+    assert "Closest region, lines 9-12, verbatim" in result.output
+    assert (
+        "<<<\n    def put(self, key, value):\n        if len(self.items) > self.size:"
+        in result.output
+    )
+    # Nothing similar at all: no region, just the message.
+    nothing = code.edit_file(workspace, "demo/cache.py", "zzzz qqqq wwww", "x")
+    assert nothing.is_error and "Closest region" not in nothing.output
+    whitespace_only = code.edit_file(workspace, "demo/cache.py", "   \n  ", "x")
+    assert whitespace_only.is_error and "only whitespace" in whitespace_only.output
 
 
 def test_edit_file_refuses_ambiguous_missing_and_test_edits(workspace: Workspace) -> None:
@@ -370,3 +439,44 @@ def test_run_tests_reports_apply_failures_and_missing_reports(workspace: Workspa
     result = box.call("run_tests", {})
     assert result.is_error and "no report" in result.output and "SyntaxError" in result.output
     assert result.meta["report_found"] is False
+
+
+TOOLZ_RETURN = (
+    "    return zip(*(collections.deque(itertools.islice(it, i), 0) or it\n"
+    "               for i, it in enumerate(itertools.tee(seq, n), 1)))\n"
+)
+
+
+@pytest.mark.parametrize(
+    "first_indent, continuation_indent",
+    [(4, 16), (5, 16), (5, 15), (0, 15)],
+)
+def test_edit_file_accepts_the_toolz_001_attempts(
+    workspace: Workspace, first_indent: int, continuation_indent: int
+) -> None:
+    """The edits Haiku sent on toolz_001 (structured runs 1 and 2): the file's
+    continuation line is indented 15 spaces; the model sent 16, and 4 or 5 on
+    the first line.  Every variant now applies, re-indented to the file."""
+    workspace.write_text(
+        "demo/win.py", "import itertools\n\n\ndef sliding_window(n, seq):\n" + TOOLZ_RETURN
+    )
+    old = (
+        " " * first_indent
+        + "return zip(*(collections.deque(itertools.islice(it, i), 0) or it\n"
+        + " " * continuation_indent
+        + "for i, it in enumerate(itertools.tee(seq, n), 1)))"
+    )
+    new = (
+        " " * first_indent
+        + "return zip(*(collections.deque(itertools.islice(it, i), 0) or it\n"
+        + " " * continuation_indent
+        + "for i, it in enumerate(itertools.tee(seq, n))))"
+    )
+    result = code.edit_file(workspace, "demo/win.py", old, new)
+    assert not result.is_error, result.output
+    assert result.meta["match"] == ("exact" if old in TOOLZ_RETURN else "whitespace")
+    text = workspace.read_text("demo/win.py")
+    assert text.endswith(
+        "    return zip(*(collections.deque(itertools.islice(it, i), 0) or it\n"
+        "               for i, it in enumerate(itertools.tee(seq, n))))\n"
+    )

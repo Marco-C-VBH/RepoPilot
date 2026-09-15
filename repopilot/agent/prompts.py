@@ -151,14 +151,38 @@ def plan_prompt(task: TaskInput, reproduction: str, *, suite_green: bool) -> str
     )
 
 
-def analyze_prompt(summary: str) -> str:
+def analyze_prompt(
+    summary: str, *, fixed: int = 0, initial: int = 0, newly_failing: int = 0
+) -> str:
+    """The ANALYZE decision point.  The progress the patch made is stated first
+    (2a.1): a weaker model offered a revert took it on a patch that had fixed
+    every initially failing test and broken one, and lost the run."""
+    if fixed and newly_failing:
+        progress = (
+            f"Progress so far: your change fixed {fixed} of the {initial} initially failing "
+            f"test(s) and broke {newly_failing}. Reverting discards that progress; the usual "
+            "answer is to keep the change and adjust it for what it broke."
+        )
+    elif fixed:
+        progress = (
+            f"Progress so far: your change fixed {fixed} of the {initial} initially failing "
+            "test(s); keep it and finish the rest."
+        )
+    elif newly_failing:
+        progress = (
+            f"Progress so far: your change fixed nothing and broke {newly_failing} test(s); "
+            "question the hypothesis before patching again."
+        )
+    else:
+        progress = "Progress so far: your change fixed none of the initially failing tests."
     return (
         "Phase: ANALYZE. No tools in this phase.\n"
         f"Test results with your change in place:\n{summary.strip()}\n\n"
+        f"{progress}\n\n"
         "Reply with JSON only:\n"
         '{"diagnosis": "why the tests still fail, in one or two sentences", '
         '"next": "patch" | "localize", "keep_patch": true | false}\n'
         'Use "patch" when the current change needs adjusting, "localize" when the cause is '
-        "elsewhere and you need to search again. Set keep_patch to false to have your "
-        "change reverted before you continue."
+        "elsewhere and you need to search again. Set keep_patch to false only when the "
+        "change is wrong in principle; it reverts every edit before you continue."
     )

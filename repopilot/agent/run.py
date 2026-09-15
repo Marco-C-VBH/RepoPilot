@@ -61,6 +61,9 @@ class AgentRun:
     files_edited: list[str]
     trace: Trace = field(repr=False)
     runtime: dict[str, Any] | None = None  # structured-runtime extras (phases, interventions)
+    edits: int = 0  # edit_file calls that changed a file
+    failed_edits: int = 0  # edit_file calls the tool refused (not found, ambiguous, test file)
+    tolerant_edits: int = 0  # edits applied through the whitespace-tolerant match (2a.1)
 
     def to_record(self) -> dict[str, Any]:
         """JSON-serializable summary stored next to the verdict (results.jsonl)."""
@@ -84,6 +87,9 @@ class AgentRun:
             "changed_files": self.changed_files,
             "files_read": self.files_read,
             "files_edited": self.files_edited,
+            "edits": self.edits,
+            "failed_edits": self.failed_edits,
+            "tolerant_edits": self.tolerant_edits,
             "final_text": clip(self.final_text, 1000),
         }
         if self.runtime is not None:

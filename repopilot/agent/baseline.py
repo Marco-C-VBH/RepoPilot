@@ -54,6 +54,7 @@ class BaselineAgent:
         messages: list[Message] = [system(self.system_prompt), user(task_prompt(task))]
         invalid_tool_calls = 0
         test_runs_refused = 0
+        edits = failed_edits = tolerant_edits = 0
         files_read: list[str] = []
         files_edited: list[str] = []
         final_text = ""
@@ -97,6 +98,9 @@ class BaselineAgent:
                 files_read=sorted(set(files_read)),
                 files_edited=sorted(set(files_edited)),
                 trace=trace,
+                edits=edits,
+                failed_edits=failed_edits,
+                tolerant_edits=tolerant_edits,
             )
 
         while True:
@@ -152,6 +156,8 @@ class BaselineAgent:
                     result = self._execute(call)
                     if call.name == "run_tests" and not result.meta.get("invalid"):
                         tracker.test_runs += 1
+                    if call.name == "edit_file" and result.is_error:
+                        failed_edits += not result.meta.get("invalid")
                 if result.meta.get("invalid") or call.parse_error:
                     invalid_tool_calls += 1
                 if not result.is_error:
@@ -159,6 +165,8 @@ class BaselineAgent:
                         files_read.append(call.arguments.get("path", ""))
                     elif call.name == "edit_file":
                         files_edited.append(call.arguments.get("path", ""))
+                        edits += 1
+                        tolerant_edits += result.meta.get("match") == "whitespace"
                 trace.add(
                     "tool_call",
                     step=tracker.steps,

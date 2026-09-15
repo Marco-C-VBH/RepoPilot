@@ -14,6 +14,7 @@ hint, not an exception.
 from __future__ import annotations
 
 import ast
+import difflib
 import re
 from dataclasses import dataclass
 
@@ -287,7 +288,16 @@ def find_references(workspace: Workspace, symbol: str, top_k: int = 20) -> ToolR
 
 
 def edit_file(workspace: Workspace, path: str, old_string: str, new_string: str) -> ToolResult:
-    """Replace one exact occurrence of ``old_string`` in ``path`` with ``new_string``.
+    """Replace one occurrence of ``old_string`` in ``path`` with ``new_string``.
+
+    The match is exact when it can be.  When the exact text is not found, the
+    lines are compared ignoring leading and trailing whitespace (Phase 2a.1):
+    a weaker model copying from the numbered ``read_file`` listing miscounts
+    indentation on continuation lines and would otherwise burn its steps on
+    "not found".  A tolerant match must be unique; the replacement is then
+    re-indented to the file (lines the model kept verbatim take their original
+    indentation, new lines follow the first line's offset), and the result says
+    so, so the trace records every use of the fallback.
 
     Tests are read-only: the benchmark judges a fix with its own tests, so
     editing the suite can only hide the bug, never fix it.
@@ -310,35 +320,171 @@ def edit_file(workspace: Workspace, path: str, old_string: str, new_string: str)
         text = workspace.read_text(path)
     except PathError as exc:
         return ToolResult.error(str(exc))
-    count = text.count(old_string)
-    if count == 0:
-        return ToolResult.error(
-            f"old_string was not found in {path}; read the file and copy the exact text "
-            "(indentation and whitespace included)"
+
+    located = _locate(text, old_string, path)
+    if isinstance(located, ToolResult):
+        return located
+    replacement = new_string if located.mode == "exact" else _reindent(new_string, located)
+    line = text.count("\n", 0, located.start) + 1
+    updated = text[: located.start] + replacement + text[located.end :]
+    workspace.write_text(path, updated)
+
+    new_lines = updated.splitlines()
+    first = max(line - 2, 1)
+    last = min(line + replacement.count("\n") + 2, len(new_lines))
+    snippet = "\n".join(f"{n:>5}| {new_lines[n - 1]}" for n in range(first, last + 1))
+    note = ""
+    if located.mode == "whitespace":
+        note = (
+            " (old_string matched only after ignoring indentation differences; the "
+            "replacement was re-indented to the file)"
         )
+    return ToolResult(
+        f"edited {path} at line {line}{note}; the region now reads:\n{snippet}",
+        meta={
+            "path": path,
+            "line": line,
+            "match": located.mode,
+            "removed_lines": old_string.count("\n") + 1,
+            "added_lines": replacement.count("\n") + 1,
+        },
+    )
+
+
+@dataclass(frozen=True)
+class _Located:
+    start: int  # offset of the matched span in the file text
+    end: int
+    mode: str  # "exact" or "whitespace"
+    old_lines: tuple[str, ...] = ()  # the model's lines (whitespace mode)
+    file_lines: tuple[str, ...] = ()  # the file's lines they matched (whitespace mode)
+    trailing_newline: bool = False  # old_string ended with a newline
+
+
+CLOSEST_MATCH_RATIO = 0.6
+
+
+def _locate(text: str, old: str, path: str) -> _Located | ToolResult:
+    """Where ``old`` is in ``text``: exactly, else ignoring per-line whitespace, else an error."""
+    count = text.count(old)
+    if count == 1:
+        offset = text.index(old)
+        return _Located(offset, offset + len(old), "exact")
     if count > 1:
         return ToolResult.error(
             f"old_string occurs {count} times in {path}; include more surrounding lines so "
             "it matches exactly once"
         )
-    offset = text.index(old_string)
-    line = text.count("\n", 0, offset) + 1
-    updated = text[:offset] + new_string + text[offset + len(old_string) :]
-    workspace.write_text(path, updated)
 
-    new_lines = updated.splitlines()
-    first = max(line - 2, 1)
-    last = min(line + new_string.count("\n") + 2, len(new_lines))
-    snippet = "\n".join(f"{n:>5}| {new_lines[n - 1]}" for n in range(first, last + 1))
-    return ToolResult(
-        f"edited {path} at line {line}; the region now reads:\n{snippet}",
-        meta={
-            "path": path,
-            "line": line,
-            "removed_lines": old_string.count("\n") + 1,
-            "added_lines": new_string.count("\n") + 1,
-        },
+    old_lines = old.split("\n")
+    trailing_newline = len(old_lines) > 1 and old_lines[-1] == ""
+    if trailing_newline:
+        old_lines = old_lines[:-1]
+    wanted = [line.strip() for line in old_lines]
+    if not any(wanted):
+        return ToolResult.error(f"old_string was not found in {path} (it is only whitespace)")
+    file_lines = text.split("\n")
+    stripped = [line.strip() for line in file_lines]
+    width = len(wanted)
+    hits = [i for i in range(len(file_lines) - width + 1) if stripped[i : i + width] == wanted]
+    if len(hits) > 1:
+        return ToolResult.error(
+            f"old_string matches {len(hits)} places in {path} once indentation is ignored; "
+            "include more surrounding lines so it matches exactly once"
+        )
+    if len(hits) == 1:
+        first = hits[0]
+        starts = _line_offsets(file_lines)
+        start = starts[first]
+        end = starts[first + width - 1] + len(file_lines[first + width - 1])
+        return _Located(
+            start,
+            end,
+            "whitespace",
+            tuple(old_lines),
+            tuple(file_lines[first : first + width]),
+            trailing_newline,
+        )
+    return ToolResult.error(_not_found_message(path, wanted, file_lines, stripped))
+
+
+def _line_offsets(lines: list[str]) -> list[int]:
+    offsets, position = [], 0
+    for line in lines:
+        offsets.append(position)
+        position += len(line) + 1
+    return offsets
+
+
+def _not_found_message(
+    path: str, wanted: list[str], file_lines: list[str], stripped: list[str]
+) -> str:
+    """The error for a miss, with the closest region of the file shown verbatim."""
+    anchor = next(line for line in wanted if line)
+    best, best_ratio = -1, 0.0
+    for index, candidate in enumerate(stripped):
+        if not candidate:
+            continue
+        ratio = difflib.SequenceMatcher(None, anchor, candidate).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = index, ratio
+    message = (
+        f"old_string was not found in {path}, not even ignoring indentation; read the file "
+        "and copy the exact text"
     )
+    if best < 0 or best_ratio < CLOSEST_MATCH_RATIO:
+        return message
+    first = max(best - 1, 0)
+    last = min(best + len(wanted), len(file_lines) - 1)
+    region = "\n".join(file_lines[first : last + 1])
+    return (
+        f"{message}. Closest region, lines {first + 1}-{last + 1}, verbatim (no line-number "
+        f"prefixes):\n<<<\n{region}\n>>>"
+    )
+
+
+def _leading_ws(line: str) -> str:
+    return line[: len(line) - len(line.lstrip())]
+
+
+def _reindent(new: str, located: _Located) -> str:
+    """``new`` re-indented to the file after a whitespace-tolerant match.
+
+    A line the model kept from the old block (same content once stripped)
+    takes that line's indentation from the file.  When the new block has as
+    many lines as the old one, a line indented like the old line in the same
+    position takes that position's file indentation (the model changed the
+    text, not the alignment).  Any other line is shifted by the difference
+    between the file's and the model's first-line indentation.
+    """
+    new_lines = new.split("\n")
+    if located.trailing_newline and len(new_lines) > 1 and new_lines[-1] == "":
+        new_lines = new_lines[:-1]
+    original = {}
+    for old_line, file_line in zip(located.old_lines, located.file_lines, strict=True):
+        original.setdefault(old_line.strip(), _leading_ws(file_line))
+    same_shape = len(new_lines) == len(located.old_lines)
+    model_base = _leading_ws(located.old_lines[0])
+    file_base = _leading_ws(located.file_lines[0])
+    out = []
+    for position, line in enumerate(new_lines):
+        content = line.strip()
+        if not content:
+            out.append("")
+        elif content in original:
+            out.append(original[content] + content)
+        elif same_shape and _leading_ws(line) == _leading_ws(located.old_lines[position]):
+            out.append(_leading_ws(located.file_lines[position]) + content)
+        elif line.startswith(model_base):
+            out.append(file_base + line[len(model_base) :])
+        else:
+            shift = len(file_base) - len(model_base)
+            current = _leading_ws(line)
+            if shift >= 0:
+                out.append(current + " " * shift + content)
+            else:
+                out.append(current[: max(len(current) + shift, 0)] + content)
+    return "\n".join(out)
 
 
 # ----------------------------------------------------------------------------- helpers

@@ -615,3 +615,31 @@ def test_phase_enum_and_state_record_shape(tmp_path: Path) -> None:
     assert state["initial_failing_tests"] == [NODEID]
     assert len(state["transitions"]) == 5
     assert pytest.approx(run.ledger["cost_usd"]) == 0.004
+
+
+def test_analyze_prompt_states_progress_before_offering_the_revert(tmp_path: Path) -> None:
+    """2a.1: cachetools_003 -- a patch that fixed the initial failure and broke another test."""
+    other = "tests/test_cache.py::test_missing_getsizeof"
+    regressed = make_run(**{NODEID: "passed", other: "failed"})
+    toolbox = make_toolbox(tmp_path, FAILING, regressed, PASSING)
+    runner, client = agent(
+        toolbox,
+        [
+            response(PLAN),
+            response(HYPOTHESIS),
+            response("", (EDIT,)),
+            response("edited"),
+            response(json.dumps({"diagnosis": "guard missing", "next": "patch"})),
+            response("", (EDIT_AGAIN,)),
+            response("guarded"),
+        ],
+    )
+    run = runner.run(TASK)
+    assert run.termination is Termination.DONE
+    prompt = client.calls[4].messages[-1].content
+    assert "fixed 1 of the 1 initially failing test(s) and broke 1" in prompt
+    assert "Reverting discards that progress" in prompt
+    assert "Newly failing: " + other in prompt
+    assert run.runtime["workspace_resets"] == 0
+    assert run.edits == 2 and run.failed_edits == 0 and run.tolerant_edits == 0
+    assert run.to_record()["edits"] == 2

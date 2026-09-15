@@ -165,3 +165,43 @@ the closest region of the file; the ANALYZE prompt states what the patch fixed
 and broke before offering the revert. **2b** — context compaction (§8.1 /
 §12.3): the structured state instead of the full history, measured on tokens
 per task at constant success. Both measured on Haiku first, with repeats.
+
+## 7. 2a.1 — tolerant edits and progress-aware ANALYZE (written 2026-09-15, before running)
+
+Two small changes, one tool-side and one prompt-side, each aimed at a failure
+the traces showed twice:
+
+- `edit_file` (shared by both arms): when the exact `old_string` is not found,
+  the lines are matched ignoring leading and trailing whitespace; the match must
+  be unique; the replacement is re-indented to the file (lines the model kept
+  take their file indentation, a line indented like the old line in the same
+  position takes that position's indentation, other lines follow the first
+  line's offset). The result says when the fallback was used
+  (`meta.match = "whitespace"`), and both agents count `edits`,
+  `failed_edits` and `tolerant_edits`, aggregated in `summary.json` as
+  `edit_failure_rate` and `tolerant_edits`. A miss now shows the closest
+  region of the file verbatim, without line-number prefixes, so the next
+  attempt can copy it.
+- ANALYZE states the patch's progress first ("fixed N of M, broke K; reverting
+  discards that") and reserves `keep_patch: false` for a change that is wrong
+  in principle.
+
+Because the tool is shared, the control arm changes too; the baseline is
+re-run so both arms are measured with the same tool.
+
+Runs: `--solver structured --model claude-haiku-4-5-20251001 --repeat 2` and
+`--solver baseline --model claude-haiku-4-5-20251001 --repeat 2` (~$4.5).
+Expected:
+
+| metric | before (structured, 2 runs) | expected after |
+|---|---|---|
+| whitespace-failed `edit_file` calls (Haiku) | 12 over 2 runs, 10 on `toolz_001` | 0 failed on whitespace; `tolerant_edits` > 0 |
+| `toolz_001` | failed twice (wrong sub-expression; `agent_loop`) | passes in both runs |
+| `agent_loop` terminations | 1 | 0 |
+| reverts of a patch that had fixed initial failures | 1 (`cachetools_003`) | 0 |
+| structured Haiku success | 12 / 14, 12 / 14 | ≥ 12 / 14 per run; 13–14 / 14 if the two fixed modes were the binding ones |
+| baseline Haiku success | 11 / 14 (1 run; 0 whitespace failures) | unchanged within one task — the tool change must not lift the control arm |
+| tokens per task | 59–61k median | roughly unchanged (fewer wasted PATCH steps on the affected tasks only) |
+
+The context-growth failures (`cachetools_003`-style: 15 steps of 100–150-line
+reads) are not addressed here and are expected to remain; they are 2b's.
