@@ -32,7 +32,7 @@ class Failure(StrEnum):
     REGRESSION_INTRODUCED = "regression_introduced"  # broke passing tests
     TEST_MISUNDERSTANDING = "test_misunderstanding"  # edited tests instead of the source
     TOOL_FAILURE = "tool_failure"  # the patch could not even be applied
-    AGENT_LOOP = "agent_loop"  # reserved for the Phase 2 loop detector
+    AGENT_LOOP = "agent_loop"  # the runtime's loop detector ended the run
 
 
 def classify_failure(task: Task, result: TaskResult) -> Failure | None:
@@ -47,6 +47,8 @@ def classify_failure(task: Task, result: TaskResult) -> Failure | None:
 
     if termination == "model_error":
         return Failure.ENVIRONMENT_FAILURE
+    if termination == "agent_loop":
+        return Failure.AGENT_LOOP
     if Reason.PATCH_APPLY_FAILED in reasons:
         return Failure.TOOL_FAILURE
     if Reason.PASS_TO_PASS_REGRESSED in reasons:
@@ -118,7 +120,7 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
             counter["pass"] += r.status is Status.PASS
 
     n = len(with_agent)
-    return {
+    metrics = {
         "results": n,
         "success_rate": round(passes / n, 4),
         "patch_rate": round(patched / n, 4),
@@ -145,6 +147,51 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
             for k, v in sorted(by_difficulty.items())
         },
     }
+    runtime = runtime_metrics(records)
+    if runtime:
+        metrics["runtime"] = runtime
+    return metrics
+
+
+RUNTIME_COUNTERS = (
+    "loop_interventions",
+    "repeated_tool_calls",
+    "refused_tool_calls",
+    "forced_transitions",
+    "nudges",
+    "analyze_rounds",
+    "workspace_resets",
+    "finalize_continues",
+)
+
+
+def runtime_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
+    """Aggregates of the structured runtime's counters; None for baseline runs."""
+    runs = [a["runtime"] for a in records if isinstance(a.get("runtime"), dict)]
+    if not runs:
+        return None
+    n = len(runs)
+    steps_by_phase: Counter = Counter()
+    for r in runs:
+        steps_by_phase.update({k: int(v) for k, v in (r.get("steps_by_phase") or {}).items()})
+    return {
+        "results": n,
+        "verified_rate": round(sum(1 for r in runs if r.get("verified")) / n, 4),
+        "loop_rate": round(sum(1 for r in runs if r.get("loop_interventions")) / n, 4),
+        "intervention_rate": round(
+            sum(
+                1
+                for r in runs
+                if any(r.get(k) for k in ("loop_interventions", "forced_transitions", "nudges"))
+            )
+            / n,
+            4,
+        ),
+        "avg_steps_after_green": _mean([int(r.get("steps_after_green", 0)) for r in runs]),
+        "avg_initial_failures": _mean([int(r.get("initial_failures", 0)) for r in runs]),
+        "steps_by_phase": dict(sorted(steps_by_phase.items())),
+        **{k: sum(int(r.get(k, 0)) for r in runs) for k in RUNTIME_COUNTERS},
+    }
 
 
 def format_agent_metrics(metrics: dict[str, Any]) -> str:
@@ -162,6 +209,19 @@ def format_agent_metrics(metrics: dict[str, Any]) -> str:
     ]
     if metrics["failures"]:
         lines.append("  failures: " + ", ".join(f"{k} {v}" for k, v in metrics["failures"].items()))
+    runtime = metrics.get("runtime")
+    if runtime:
+        lines.append(
+            f"  runtime: verified {runtime['verified_rate']:.1%} · loop rate "
+            f"{runtime['loop_rate']:.1%} · interventions: loop {runtime['loop_interventions']}, "
+            f"forced {runtime['forced_transitions']}, nudges {runtime['nudges']}, refused "
+            f"{runtime['refused_tool_calls']}, resets {runtime['workspace_resets']} · "
+            f"steps after green {runtime['avg_steps_after_green']:.1f}"
+        )
+        lines.append(
+            "  steps by phase: "
+            + ", ".join(f"{k} {v}" for k, v in runtime["steps_by_phase"].items())
+        )
     for label, buckets in (
         ("category", metrics["by_category"]),
         ("difficulty", metrics["by_difficulty"]),

@@ -144,6 +144,16 @@ def test_anthropic_merges_consecutive_tool_results_into_one_user_turn() -> None:
     assert [m["role"] for m in payload] == ["user", "assistant", "user"]
     assert [b["tool_use_id"] for b in payload[-1]["content"]] == ["a", "b"]
 
+    # A user turn right after tool results (the runtime's phase instructions) joins
+    # that user message as a text block; two plain user turns merge the same way.
+    payload = AnthropicClient.to_messages([*messages, user("Phase: PATCH")])
+    assert [m["role"] for m in payload] == ["user", "assistant", "user"]
+    assert payload[-1]["content"][-1] == {"type": "text", "text": "Phase: PATCH"}
+    payload = AnthropicClient.to_messages([user("a"), user("b")])
+    assert payload == [
+        {"role": "user", "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}
+    ]
+
 
 def test_anthropic_omits_temperature_and_tools_when_not_given() -> None:
     sdk = FakeAnthropicSDK(anthropic_response(text_block("ok")))
@@ -439,3 +449,25 @@ def test_client_for_picks_the_adapter_by_model_id() -> None:
     openai = client_for("gpt-5.6-luna", sdk_client=FakeOpenAISDK(None))
     assert isinstance(anthropic, AnthropicClient) and anthropic.model == "claude-haiku-4-5-20251001"
     assert isinstance(openai, OpenAIClient) and openai.model == "gpt-5.6-luna"
+
+
+def test_tool_choice_none_keeps_tools_defined_but_unusable() -> None:
+    """A decision point of the runtime: tool calls in the history, no tool use allowed."""
+    sdk = FakeAnthropicSDK(anthropic_response(text_block("plan")))
+    AnthropicClient("claude-sonnet-5", sdk_client=sdk).complete(
+        CONVERSATION, tools=TOOLS, tool_choice="none"
+    )
+    assert sdk.requests[0]["tool_choice"] == {"type": "none"}
+    assert [t["name"] for t in sdk.requests[0]["tools"]] == ["read_file"]
+
+    sdk = FakeOpenAISDK(openai_response(message_item(text_part("plan"))))
+    OpenAIClient("gpt-5.6-terra", sdk_client=sdk).complete(
+        CONVERSATION, tools=TOOLS, tool_choice="none"
+    )
+    assert sdk.requests[0]["tool_choice"] == "none"
+    assert [t["name"] for t in sdk.requests[0]["tools"]] == ["read_file"]
+
+    # Without tools there is nothing to choose; the parameter is simply absent.
+    sdk = FakeAnthropicSDK(anthropic_response(text_block("ok")))
+    AnthropicClient("claude-sonnet-5", sdk_client=sdk).complete([user("hi")], tool_choice="none")
+    assert "tool_choice" not in sdk.requests[0] and "tools" not in sdk.requests[0]

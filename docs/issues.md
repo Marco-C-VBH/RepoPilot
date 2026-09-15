@@ -8,6 +8,44 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 6 · Live test for `tool_choice="none"`: the model obeyed, the test contradicted itself
+
+**Date:** 2026-09-15 · **Area:** model layer / tests · **Severity:** low (test only;
+the runtime feature it covers worked on both providers)
+
+**Symptom.** The Phase 2a round trip added to `tests/test_models_live.py` — tool
+calls in the history, a user turn right after the tool result, tools defined
+but `tool_choice="none"` — was accepted by both APIs and produced no tool call,
+which is what the runtime's decision points need. It then failed on the
+answer: asked "Now 3 + 4?", `claude-haiku-4-5` returned an *empty* reply and
+`gpt-5.6-luna` said "I can't calculate that right now."
+
+**Root cause.** The test's own instructions were contradictory. Its system
+prompt says "Use the add tool for arithmetic; never compute it yourself", the
+call then disabled the only tool and asked for arithmetic. Both models obeyed
+the system prompt, each in its own way: luna refused in words, Haiku returned
+nothing at all. The mechanism under test (definitions sent, tool use forbidden)
+was fine; the question was not.
+
+**Fix.** The decision-point turn asks for something that needs no tool ("Reply
+with the single word: done") and checks the reply text; the assertion message
+carries the whole response so the next mismatch is readable.
+
+**Guard.** The runtime's decision-point prompts (PLAN, ANALYZE, FINALIZE) never
+conflict with the system prompt: they say "No tools in this phase. Reply with
+JSON only", and the runtime tolerates an empty reply at each of them (a plan
+falls back to the raw text or nothing, an analysis to "patch, keep the patch",
+a finalize to "done"; in LOCALIZE an empty reply is nudged once). The
+observation that a model may answer a contradictory instruction with an *empty*
+message, not a refusal, is why those fallbacks stay.
+
+**Lesson.** When a test disables a capability, do not also ask for the thing
+only that capability can do; a model that complies with the stronger
+instruction will look broken. And an empty reply is a real failure mode to
+handle, not just a refusal.
+
+---
+
 ## 5 · OpenAI live test: function tools rejected on Chat Completions
 
 **Date:** 2026-09-14 · **Area:** model layer · **Severity:** medium (blocked every

@@ -61,7 +61,18 @@ def _round_trip(model: str) -> None:
     ledger.record(answer)
     assert answer.stop_reason is StopReason.END_TURN, answer
     assert "42" in answer.text
-    assert ledger.calls == 3 and ledger.cost_usd < 0.05
+
+    # A decision point of the structured runtime: tool calls in the history, a user
+    # turn right after the tool result, tools defined but tool_choice="none" -- the
+    # request must be accepted and answered in text.  The question must not need
+    # the tool: asked for arithmetic with the tool disabled and a system prompt that
+    # forbids computing, Haiku returned an empty reply and luna refused (issue #6).
+    conversation += [answer.as_message(), user("Reply with the single word: done")]
+    decided = llm.complete(conversation, tools=[ADD], max_tokens=2000, tool_choice="none")
+    ledger.record(decided)
+    assert decided.stop_reason is StopReason.END_TURN and not decided.tool_calls, decided
+    assert "done" in decided.text.lower(), decided
+    assert ledger.calls == 4 and ledger.cost_usd < 0.05
 
 
 @pytest.mark.llm("anthropic")

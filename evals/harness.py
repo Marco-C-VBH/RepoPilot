@@ -318,6 +318,18 @@ def run_task(
             f"{agent_run.ledger['output_tokens']} out · ${agent_run.ledger['cost_usd']:.4f}",
             f"files read: {', '.join(agent_run.files_read) or '-'}",
             f"files edited: {', '.join(agent_run.files_edited) or '-'}",
+        ]
+        if agent_run.runtime:
+            rt = agent_run.runtime
+            log += [
+                "phases: "
+                + " -> ".join(str(t["to"]) for t in rt.get("transitions", []))
+                + f" · verified {rt.get('verified')}",
+                f"interventions: loop {rt.get('loop_interventions', 0)} · forced "
+                f"{rt.get('forced_transitions', 0)} · nudges {rt.get('nudges', 0)} · refused "
+                f"{rt.get('refused_tool_calls', 0)} · resets {rt.get('workspace_resets', 0)}",
+            ]
+        log += [
             f"final: {(agent_run.final_text or '').strip()[:600]}",
             f"trace: {trace_path or '(not written)'}",
             "",

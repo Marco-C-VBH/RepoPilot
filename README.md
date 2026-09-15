@@ -11,7 +11,8 @@ deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy
 with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done,
-first results below.** Every number here is measured by a run archived under
+results below; Phase 2a (structured runtime) — built and unit-tested, benchmark
+runs pending.** Every number here is measured by a run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -143,6 +144,7 @@ architecture ablation (spec §12.2), and every later phase is measured against i
 uv run python -m evals.runner --solver baseline --ids cachetools_004 --max-run-cost 2   # one task
 uv run python -m evals.runner --solver baseline --max-run-cost 10                       # all tasks
 uv run python -m evals.runner --solver baseline --model gpt-5.6-terra --max-steps 20    # variations
+uv run python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10  # Phase 2a runtime
 ```
 
 The agent works on a host-side git checkout of the buggy tree (`repopilot/tools/`)
@@ -239,6 +241,44 @@ tests go green, invalid-call rate and tokens per task as the outcomes; (2)
 magnitude larger, cross-module symptoms, more hidden-only tasks, 30+ tasks) is
 required before the retrieval work of Phase 3 can show anything on success rate.
 
+## The structured runtime (Phase 2a)
+
+`--solver structured` runs the same tools, workspace, sandbox, budget and model
+through a state machine that owns control (spec §5; design and pre-registered
+expectations in `docs/runtime-design.md`):
+
+```
+INITIALIZE  runtime  run the task's tests once, before any change (initial_failures)
+PLAN        model    no tools; {"plan": [...], "suspects": [...]}
+LOCALIZE    model    search_code / search_symbol / find_references / read_file;
+                     a reply without tool calls is the hypothesis
+PATCH       model    the same plus edit_file, never run_tests; a reply without tool
+                     calls and a changed diff hands over to TEST
+TEST        runtime  the full test command; fixed / still failing / newly failing
+                     green -> DONE (FINALIZE first when the suite started green)
+ANALYZE     model    no tools; {"diagnosis", "next": "patch"|"localize", "keep_patch"}
+```
+
+What the runtime does that the baseline leaves to the model: it reproduces
+before planning, verifies after every patching turn, and ends the run on a green
+full-suite run (no exploring after success); it refuses tools outside the phase
+and asks for the hypothesis when a phase's tool budget (10 calls) is spent; it
+refuses the third identical tool call with a replanning notice and ends the run
+as `agent_loop` on the fourth (spec §9.2); it nudges once when a patching turn
+ends without an edit and ends the run as `no_progress` on the second; it reverts
+the workspace when ANALYZE says so. `max_test_runs = 5` now means one
+reproduction plus at most four patch → test rounds. The conversation history is
+kept in full — 2a changes control only, so the architecture ablation (spec
+§12.2) isolates it; context compaction is Phase 2b.
+
+Every run records the phase transitions, the plan, the hypotheses and their
+fate, each test run's fixed / still-failing / newly-failing sets and the
+intervention counters (`agent.runtime` in `results.jsonl`, `phase` / `decision`
+/ `test_run` / `intervention` / `state` events in the trace); the summary adds
+`verified_rate`, `loop_rate`, steps by phase and the intervention totals.
+Results against the baseline, on the same three models, will be reported here
+once the runs are archived.
+
 ## RepoPilot-Bench v0
 
 14 controlled-mutation tasks on three small, pure-Python libraries pinned to one
@@ -302,9 +342,14 @@ repopilot/                 library
   tools/toolbox.py         the six tool schemas the model sees + dispatch/validation + run_tests
                            (workspace diff -> sandbox -> per-test summary)
   agent/budget.py          AgentBudget (spec §9.1) + BudgetTracker
-  agent/prompts.py         system prompt and task prompt of the baseline
-  agent/baseline.py        BaselineAgent: the budgeted tool loop -> AgentRun (metrics, patch, trace)
-  tracing/events.py        Trace: JSONL events (model_call, tool_call, patch, run_end)
+  agent/prompts.py         system / task prompts of the baseline; phase prompts of the runtime
+  agent/run.py             Termination reasons + AgentRun (metrics, patch, trace) shared by both agents
+  agent/baseline.py        BaselineAgent: the budgeted tool loop (Phase 1, the control arm)
+  agent/state.py           AgentState (spec §5.2): plan, hypotheses, test history, counters; Phase
+  agent/policies.py        phase tool sets, per-phase limits, LoopDetector (spec §9.2), JSON parsing
+  agent/runtime.py         StructuredAgent: the state machine (Phase 2a, the treatment arm)
+  tracing/events.py        Trace: JSONL events (model_call, tool_call, phase, test_run, decision,
+                           intervention, state, patch, run_end)
   sandbox/limits.py        resource limits applied to every sandbox container
   sandbox/repo.py          host-side checkout of a repo at a commit (mirror cache, no .git)
   sandbox/docker.py        per-task image build + Sandbox container (exec / apply_patch /
@@ -322,7 +367,8 @@ evals/                     RepoPilot-Bench
   benchmark/authoring.py   source dir -> derived gold patch, symbols, f2p/p2p -> task JSON
   benchmark/tasks/         the benchmark itself, one JSON file per task
   judge.py                 fail_to_pass ∧ pass_to_pass -> Verdict with reason codes
-  solvers.py               Solver protocol; `null` and `gold` oracles; `baseline` agent solver
+  solvers.py               Solver protocol; `null` and `gold` oracles; `baseline` and `structured`
+                           agent solvers (same workspace / sandbox / budget, different agent)
   harness.py               build image -> solve -> evaluate in a fresh sandbox -> TaskResult
                            (+ agent record, trace file, test-file edits stripped from patches)
   metrics.py               agent metrics (spec §11.1) and the failure taxonomy (spec §11.2)
@@ -332,6 +378,7 @@ docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
 docs/leak-audit.md         why v0 saturates: what the agent cannot see, what it did see, ablation plan
+docs/runtime-design.md     Phase 2a design and the pre-registered expectations for the runtime runs
 evals/experiments/         archived runs behind the numbers in this README (summary, results, traces)
 scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py,
                            archive_run.py (results/<run> -> evals/experiments/<name>),

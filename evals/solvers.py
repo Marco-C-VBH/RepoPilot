@@ -12,6 +12,9 @@ the verdict.
 * ``baseline`` -- the Phase 1 agent: a plain tool-calling loop under a budget
   (``repopilot.agent.baseline``).  It exposes ``last_run`` so the harness can
   store the run's metrics and trace next to the verdict.
+* ``structured`` -- the Phase 2 runtime (``repopilot.agent.runtime``): the same
+  tools, workspace and sandbox, driven by a state machine.  Same options, same
+  ``last_run``; the two are the arms of the architecture ablation (spec §12.2).
 """
 
 from __future__ import annotations
@@ -22,9 +25,13 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from evals.benchmark.schema import Task
-from repopilot.agent.baseline import AgentRun, BaselineAgent
+from repopilot.agent.baseline import BaselineAgent
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget
+from repopilot.agent.policies import DEFAULT_LIMITS as DEFAULT_RUNTIME_LIMITS
+from repopilot.agent.policies import RuntimeLimits
 from repopilot.agent.prompts import TaskInput
+from repopilot.agent.run import AgentRun
+from repopilot.agent.runtime import StructuredAgent
 from repopilot.models.client import ModelClient, client_for
 from repopilot.models.config import DEFAULT_STRONG_MODEL
 from repopilot.sandbox.docker import Sandbox
@@ -54,17 +61,29 @@ class GoldSolver:
         return task.gold_patch
 
 
-@dataclass
-class BaselineSolver:
-    """Run ``BaselineAgent`` on a host workspace + sandbox and return its diff."""
+class Agent(Protocol):
+    def run(self, task: TaskInput) -> AgentRun: ...
 
-    name = "baseline"
+
+@dataclass
+class AgentSolver:
+    """Run an agent on a host workspace + sandbox and return its diff.
+
+    Subclasses pick the agent; everything else (workspace, sandbox, toolbox,
+    budget, model client) is identical, so a comparison between solvers is a
+    comparison between agents and nothing else.
+    """
+
+    name = "agent"
     model: str = DEFAULT_STRONG_MODEL
     budget: AgentBudget = DEFAULT_BUDGET
     cache_dir: Path = DEFAULT_CACHE_DIR
     limits: SandboxLimits = DEFAULT_LIMITS
     client_factory: Callable[[str], ModelClient] = client_for
     last_run: AgentRun | None = field(default=None, init=False, repr=False)
+
+    def make_agent(self, client: ModelClient, toolbox: Toolbox) -> Agent:
+        raise NotImplementedError
 
     def solve(self, task: Task, image: str) -> str | None:
         self.last_run = None
@@ -81,7 +100,7 @@ class BaselineSolver:
                 test_command=task.test_command,
                 test_timeout=task.env.test_timeout_seconds,
             )
-            agent = BaselineAgent(client, toolbox, self.budget)
+            agent = self.make_agent(client, toolbox)
             run = agent.run(
                 TaskInput(
                     task_id=task.id,
@@ -95,11 +114,34 @@ class BaselineSolver:
         return run.patch or None
 
 
+@dataclass
+class BaselineSolver(AgentSolver):
+    """Phase 1: ``BaselineAgent``, the unconstrained tool loop."""
+
+    name = "baseline"
+
+    def make_agent(self, client: ModelClient, toolbox: Toolbox) -> Agent:
+        return BaselineAgent(client, toolbox, self.budget)
+
+
+@dataclass
+class StructuredSolver(AgentSolver):
+    """Phase 2: ``StructuredAgent``, the state-machine runtime."""
+
+    name = "structured"
+    runtime_limits: RuntimeLimits = DEFAULT_RUNTIME_LIMITS
+
+    def make_agent(self, client: ModelClient, toolbox: Toolbox) -> Agent:
+        return StructuredAgent(client, toolbox, self.budget, limits=self.runtime_limits)
+
+
 SOLVERS: dict[str, type[Any]] = {
     NullSolver.name: NullSolver,
     GoldSolver.name: GoldSolver,
     BaselineSolver.name: BaselineSolver,
+    StructuredSolver.name: StructuredSolver,
 }
+AGENT_SOLVERS = (BaselineSolver.name, StructuredSolver.name)
 
 
 def get_solver(name: str, **options: Any) -> Solver:
@@ -108,7 +150,7 @@ def get_solver(name: str, **options: Any) -> Solver:
         cls = SOLVERS[name]
     except KeyError:
         raise ValueError(f"unknown solver {name!r}; available: {sorted(SOLVERS)}") from None
-    if cls is BaselineSolver:
+    if issubclass(cls, AgentSolver):
         return cls(**options)
     if options:
         raise ValueError(f"solver {name!r} takes no options (got {sorted(options)})")

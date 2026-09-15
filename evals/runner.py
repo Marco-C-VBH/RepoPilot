@@ -5,6 +5,7 @@
     python -m evals.runner --solver gold --repeat 2          # determinism check
     python -m evals.runner --solver gold --ids cachetools_001 cachetools_002
     python -m evals.runner --solver baseline --model claude-sonnet-5 --max-run-cost 10
+    python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10
     python -m evals.runner --list
 
 Each run writes ``results/<solver>-<timestamp>-<id>/`` containing
@@ -37,7 +38,7 @@ from evals.benchmark.schema import Task
 from evals.harness import TaskResult, run_task
 from evals.judge import Status
 from evals.metrics import agent_metrics, classify_failure, format_agent_metrics
-from evals.solvers import SOLVERS, BaselineSolver, Solver, get_solver
+from evals.solvers import AGENT_SOLVERS, SOLVERS, AgentSolver, Solver, get_solver
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget
 from repopilot.models.config import (
     ConfigError,
@@ -168,7 +169,7 @@ def run_benchmark(
     spent = 0.0
     stopped_early: str | None = None
     print(f"run {run_id}: {len(tasks)} task(s) × {repeat}, solver={solver_name}")
-    if isinstance(solver, BaselineSolver):
+    if isinstance(solver, AgentSolver):
         b = solver.budget
         print(
             f"model={solver.model} budget: {b.max_steps} steps, {b.max_tool_calls} tool calls, "
@@ -206,7 +207,7 @@ def run_benchmark(
                 break
 
     summary = _summarize(results, run_id, solver_name, len(tasks), repeat, started_at, t0, out_dir)
-    if isinstance(solver, BaselineSolver):
+    if isinstance(solver, AgentSolver):
         summary.model = solver.model
         summary.budget = solver.budget.to_record()
     summary.agent = agent_metrics(tasks, results)
@@ -304,11 +305,11 @@ def print_summary(summary: RunSummary) -> None:
 
 def build_solver(args: argparse.Namespace) -> Solver:
     """The solver the CLI asked for; agent solvers get model, budget and keys checked."""
-    if args.solver != BaselineSolver.name:
+    if args.solver not in AGENT_SOLVERS:
         return get_solver(args.solver)
     load_env(args.env_file)
     settings = ModelSettings.from_env(strong=args.model)
-    api_key_for(provider_for(settings.strong))  # the baseline uses the strong model only
+    api_key_for(provider_for(settings.strong))  # both agents use the strong model only
     return get_solver(
         args.solver, model=settings.strong, budget=budget_from_args(args), cache_dir=args.cache_dir
     )

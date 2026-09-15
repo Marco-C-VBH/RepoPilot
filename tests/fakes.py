@@ -88,3 +88,16 @@ def make_run(**tests: str) -> TestRun:
         tests=results,
         report_found=True,
     )
+
+
+@dataclass
+class ScriptedSandbox(FakeSandbox):
+    """A ``FakeSandbox`` whose test runs follow a script (the last one repeats)."""
+
+    runs: list[TestRun] = field(default_factory=list)
+
+    def run_tests(self, test_command: str, *, timeout: float = 300) -> TestRun:
+        self.calls.append(("run", test_command))
+        if len(self.runs) > 1:
+            return self.runs.pop(0)
+        return self.runs[0] if self.runs else self.run

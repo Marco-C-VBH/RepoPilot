@@ -57,6 +57,7 @@ class ModelClient(Protocol):
         tools: Sequence[ToolSpec] = (),
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        tool_choice: str = "auto",
     ) -> ModelResponse: ...
 
 
@@ -109,11 +110,19 @@ class AnthropicClient:
     @staticmethod
     def to_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
         """Neutral turns -> Anthropic ``messages``.  Consecutive tool results become a
-        single user message of ``tool_result`` blocks, as the API requires."""
+        single user message of ``tool_result`` blocks, as the API requires, and a
+        user turn that follows tool results (the runtime's phase instructions) is
+        appended to that same message as a text block."""
         out: list[dict[str, Any]] = []
         for m in messages:
             if m.role is Role.USER:
-                out.append({"role": "user", "content": m.content})
+                if out and out[-1]["role"] == "user":
+                    previous = out[-1]["content"]
+                    if isinstance(previous, str):
+                        previous = [{"type": "text", "text": previous}]
+                    out[-1]["content"] = [*previous, {"type": "text", "text": m.content}]
+                else:
+                    out.append({"role": "user", "content": m.content})
             elif m.role is Role.ASSISTANT:
                 blocks: list[dict[str, Any]] = []
                 if m.content:
@@ -158,6 +167,7 @@ class AnthropicClient:
         tools: Sequence[ToolSpec] = (),
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        tool_choice: str = "auto",
     ) -> dict[str, Any]:
         system, rest = _split_system(messages)
         request: dict[str, Any] = {
@@ -169,6 +179,10 @@ class AnthropicClient:
             request["system"] = system
         if tools:
             request["tools"] = self.to_tools(tools)
+            if tool_choice == "none":
+                # The history may hold tool_use blocks, which the API only accepts
+                # when tools are defined; "none" keeps them defined but unusable.
+                request["tool_choice"] = {"type": "none"}
         if temperature is not None:
             request["temperature"] = temperature
         return request
@@ -225,9 +239,14 @@ class AnthropicClient:
         tools: Sequence[ToolSpec] = (),
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        tool_choice: str = "auto",
     ) -> ModelResponse:
         request = self.build_request(
-            messages, tools=tools, max_tokens=max_tokens, temperature=temperature
+            messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            tool_choice=tool_choice,
         )
         try:
             raw, latency_ms = _timed(lambda: self._sdk.messages.create(**request))
@@ -337,6 +356,7 @@ class OpenAIClient:
         tools: Sequence[ToolSpec] = (),
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        tool_choice: str = "auto",
     ) -> dict[str, Any]:
         system, rest = _split_system(messages)
         request: dict[str, Any] = {
@@ -350,7 +370,7 @@ class OpenAIClient:
             request["instructions"] = system
         if tools:
             request["tools"] = self.to_tools(tools)
-            request["tool_choice"] = "auto"
+            request["tool_choice"] = "none" if tool_choice == "none" else "auto"
         if self.reasoning_effort is not None:
             request["reasoning"] = {"effort": self.reasoning_effort}
         # Reasoning models reject non-default temperatures, so it is only sent
@@ -425,9 +445,14 @@ class OpenAIClient:
         tools: Sequence[ToolSpec] = (),
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        tool_choice: str = "auto",
     ) -> ModelResponse:
         request = self.build_request(
-            messages, tools=tools, max_tokens=max_tokens, temperature=temperature
+            messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            tool_choice=tool_choice,
         )
         try:
             raw, latency_ms = _timed(lambda: self._sdk.responses.create(**request))
@@ -445,6 +470,7 @@ class RecordedCall:
     tools: tuple[ToolSpec, ...]
     max_tokens: int
     temperature: float | None
+    tool_choice: str = "auto"
 
 
 @dataclass
@@ -470,9 +496,12 @@ class FakeClient:
         tools: Sequence[ToolSpec] = (),
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        tool_choice: str = "auto",
     ) -> ModelResponse:
         _split_system(messages)  # same validation as the real clients
-        self.calls.append(RecordedCall(tuple(messages), tuple(tools), max_tokens, temperature))
+        self.calls.append(
+            RecordedCall(tuple(messages), tuple(tools), max_tokens, temperature, tool_choice)
+        )
         if not self.script:
             raise ModelError(self.provider, self.model, RuntimeError("fake script exhausted"))
         item = self.script.pop(0)

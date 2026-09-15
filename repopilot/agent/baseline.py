@@ -16,12 +16,10 @@ the candidate patch.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from enum import StrEnum
-from typing import Any
 
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget, BudgetTracker
 from repopilot.agent.prompts import SYSTEM_PROMPT, TaskInput, task_prompt
+from repopilot.agent.run import BUDGET_TERMINATION, AgentRun, Termination
 from repopilot.models.client import ModelClient, ModelError
 from repopilot.models.ledger import Ledger
 from repopilot.models.types import Message, StopReason, ToolCall, system, tool_result, user
@@ -31,76 +29,7 @@ from repopilot.tracing.events import Trace, clip, clip_arguments
 
 DEFAULT_MAX_OUTPUT_TOKENS = 6000
 
-
-class Termination(StrEnum):
-    DONE = "done"  # the model ended its turn without tool calls
-    BUDGET_STEPS = "budget_steps"
-    BUDGET_TOOL_CALLS = "budget_tool_calls"
-    BUDGET_TOKENS = "budget_tokens"
-    BUDGET_COST = "budget_cost"
-    BUDGET_RUNTIME = "budget_runtime"
-    MODEL_ERROR = "model_error"  # provider failure after the SDK's retries
-    MODEL_TRUNCATED = "model_truncated"  # reply cut off by max output tokens, no tool calls
-    MODEL_STOPPED = "model_stopped"  # refusal / filter / other provider stop
-
-    @property
-    def is_budget(self) -> bool:
-        return self.value.startswith("budget_")
-
-
-_BUDGET_TERMINATION = {
-    "steps": Termination.BUDGET_STEPS,
-    "tool_calls": Termination.BUDGET_TOOL_CALLS,
-    "tokens": Termination.BUDGET_TOKENS,
-    "cost": Termination.BUDGET_COST,
-    "runtime": Termination.BUDGET_RUNTIME,
-}
-
-
-@dataclass
-class AgentRun:
-    """Everything the harness and the metrics need to know about one run."""
-
-    termination: Termination
-    detail: str | None
-    steps: int
-    tool_calls: int
-    invalid_tool_calls: int
-    test_runs: int
-    test_runs_refused: int
-    elapsed_seconds: float
-    ledger: dict[str, Any]
-    final_text: str
-    patch: str
-    changed_files: list[str]
-    files_read: list[str]
-    files_edited: list[str]
-    trace: Trace = field(repr=False)
-
-    def to_record(self) -> dict[str, Any]:
-        """JSON-serializable summary stored next to the verdict (results.jsonl)."""
-        return {
-            "termination": str(self.termination),
-            "detail": self.detail,
-            "steps": self.steps,
-            "tool_calls": self.tool_calls,
-            "invalid_tool_calls": self.invalid_tool_calls,
-            "test_runs": self.test_runs,
-            "test_runs_refused": self.test_runs_refused,
-            "elapsed_seconds": round(self.elapsed_seconds, 3),
-            "input_tokens": self.ledger["input_tokens"],
-            "output_tokens": self.ledger["output_tokens"],
-            "cache_read_tokens": self.ledger["cache_read_tokens"],
-            "reasoning_tokens": self.ledger["reasoning_tokens"],
-            "cost_usd": self.ledger["cost_usd"],
-            "model_latency_ms": self.ledger["latency_ms"],
-            "by_model": self.ledger["by_model"],
-            "patch_bytes": len(self.patch.encode("utf-8")),
-            "changed_files": self.changed_files,
-            "files_read": self.files_read,
-            "files_edited": self.files_edited,
-            "final_text": clip(self.final_text, 1000),
-        }
+__all__ = ["DEFAULT_MAX_OUTPUT_TOKENS", "AgentRun", "BaselineAgent", "Termination"]
 
 
 class BaselineAgent:
@@ -173,7 +102,7 @@ class BaselineAgent:
         while True:
             limit = tracker.exceeded()
             if limit:
-                return finish(_BUDGET_TERMINATION[limit], f"{limit} limit reached before step")
+                return finish(BUDGET_TERMINATION[limit], f"{limit} limit reached before step")
 
             tracker.steps += 1
             try:
@@ -248,7 +177,7 @@ class BaselineAgent:
 
             limit = tracker.exceeded()
             if limit in ("tokens", "cost"):
-                return finish(_BUDGET_TERMINATION[limit], f"{limit} limit reached")
+                return finish(BUDGET_TERMINATION[limit], f"{limit} limit reached")
 
     def _execute(self, call: ToolCall) -> ToolResult:
         if call.parse_error:
