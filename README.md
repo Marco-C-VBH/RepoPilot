@@ -11,9 +11,10 @@ deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy
 with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
-Phase 2a (structured runtime) — done and measured against the baseline, results
-below.** Every number here is measured by a run archived under
-`evals/experiments/`; nothing is a placeholder.
+Phase 2a (structured runtime) and 2a.1 (tolerant edits) — done and measured
+against the baseline, results below; next: 2b (context compaction).** Every
+number here is measured by a run archived under `evals/experiments/`; nothing
+is a placeholder.
 
 ## Results so far
 
@@ -64,24 +65,27 @@ Same 14 tasks, same budget, same models; the runtime owns reproduction,
 verification, termination, phase tool sets and loop detection (details in
 [The structured runtime](#the-structured-runtime-phase-2a)):
 
-| model | arm | success | steps | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | invalid tool calls |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `claude-haiku-4-5` | baseline | 11 / 14 | 14.3 | 90.8k | $0.105 | 27 s | 6 / 14 | 0.0% |
-| | **structured** | **12 / 14** | 12.3 | 60.9k | $0.067 | 25 s | 2 / 14 (+1 loop) | 0.0% |
-| `gpt-5.6-luna` | baseline | 14 / 14 | 7.7 | 33.7k | $0.003 | 18 s | 0 | 8.3% |
-| | **structured** | **14 / 14** | 8.1 | 39.0k | $0.004 | 20 s | 0 | 10.8% |
-| `claude-sonnet-5` | baseline (3 × 14) | 42 / 42 | 5.9 | 18.7k | $0.045 | 15 s | 0 | 1.4% |
-| | **structured** | **14 / 14** | 6.9 | 22.4k | $0.053 | 16 s | 0 | 0.0% |
+| model | arm | success | steps | tool calls | test runs | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | repeatable verdicts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-haiku-4-5` (2 × 14) | baseline | 26 / 28 | 14.4 | 13.9 | 3.2 | 101.6k | $0.111 | 27 s | 13 / 28 | no (2 tasks flip) |
+| | **structured** | **26 / 28** | **10.9** | **8.6** | **2.0** | **56.2k** | **$0.063** | **23 s** | **3 / 28** | **yes** |
+| `gpt-5.6-luna` (1 × 14) | baseline | 14 / 14 | 7.7 | 10.3 | 2.1 | 33.7k | $0.003 | 18 s | 0 | – |
+| | **structured** | **14 / 14** | 8.1 | 9.2 | 2.1 | 39.0k | $0.0045 | 20 s | 0 | – |
+| `claude-sonnet-5` (1 × 14; baseline 3 × 14) | baseline | 42 / 42 | 5.9 | ≈5 | 1.1 | 18.7k | $0.045 | 15 s | 0 | yes |
+| | **structured** | **14 / 14** | 6.9 | 3.9 | 2.0 | 22.4k | $0.053 | 16 s | 0 | – |
 
-Archived as `evals/experiments/structured-v0-*/`. The runtime moved what it was
-built to move — on Haiku, budget terminations 6 → 2, tokens per task −33%,
-cost −36%, and no run kept exploring after its tests were green — but success
-rate stayed within one task of the baseline (one task is 7 points), and the
-capable models paid for the structure: one extra step (PLAN) and +19% (Sonnet)
-/ +55% (luna, on $0.003) cost, with luna's invented-argument rate unchanged as
-predicted. The pre-registered expectation of 14 / 14 for Haiku was not met; the
-traces say why in [Phase 2a findings](#phase-2a-findings), and they point at
-the two next changes: tolerant exact-text edits and context compaction.
+Haiku rows: `evals/experiments/baseline-2a1-haiku45-x2/` and
+`structured-2a1-haiku45-x2/`, both arms with the same tools (after 2a.1);
+luna and Sonnet rows: `baseline-v0-*` and `structured-v0-*`. The runtime does
+not raise Haiku's success rate on v0 — the two arms tie at 26 / 28 over two
+runs each — but it changes everything else about how Haiku gets there: half the
+tokens and cost per task, a quarter of the budget terminations, fewer steps,
+tool calls and test runs, and the same verdict on every task across repeats
+(the baseline flips two). The capable models pay for the structure: one extra
+step (PLAN) and +19% (Sonnet) / +55% (luna, on $0.003) cost per task. The
+pre-registered expectation of 14 / 14 for Haiku was not met; what the traces
+say about that is in [Phase 2a findings](#phase-2a-findings), and the
+remaining failure is the one context compaction (2b) is for.
 
 ## Setup
 
@@ -348,15 +352,36 @@ beforehand in `docs/runtime-design.md`:
   points cost it reasoning tokens), invalid calls 8.3% → 10.8% (14 of 129, the
   same `edit_file(replacement=…)` habit; nothing in 2a targets it).
 
-Next, in order: **2a.1** (built; runs pending — pre-registered in
-`docs/runtime-design.md` §7) — an `edit_file` that falls back to a unique
-whitespace-tolerant match when the exact text is not found, re-indents the
-replacement to the file and reports it, an error that shows the closest region
-of the file verbatim, and an ANALYZE prompt that states the progress a patch
-made before offering to revert it; both arms count `edits`, `failed_edits`
-and `tolerant_edits`. **2b** — context compaction (spec §8.1 / §12.3),
-measured on tokens per task with success held constant. Both are measured on
-Haiku first, where the failure modes live.
+- **2a.1 — tolerant edits and a progress-aware ANALYZE** (pre-registered in
+  `docs/runtime-design.md` §7, measured with `--repeat 2` on both arms). `edit_file`
+  now falls back to a unique whitespace-tolerant match when the exact text is
+  not found, re-indents the replacement to the file and says so; a miss shows the
+  closest region of the file verbatim; ANALYZE states what the patch fixed and
+  broke before offering to revert it. Results against the expectations:
+  whitespace-failed edits 12 → **0** (5 structured and 3 baseline edits went
+  through the fallback, every one of them in a run that passed); `toolz_001`
+  passed both times (7 and 10 steps instead of 18–19); `agent_loop` 0; no patch
+  that had fixed initial failures was reverted (the two resets were on
+  `toolz_003` patches that fixed nothing and broke one test — the right call);
+  structured success 13 / 14 in both runs, with identical verdicts. The one
+  expectation that failed is the control arm: the baseline moved from 11 / 14 to
+  12 / 14 and 14 / 14, more than "within one task". Its three tolerant edits were
+  on tasks it had already passed, so the lift is run-to-run variance — its two
+  former failures passed on `budget_tokens` with the patch in place — not the
+  tool. Conclusion: with the same tools, the arms tie on success (26 / 28 each),
+  and the runtime wins on every efficiency and reliability metric.
+- **What remains: one failure, deterministic.** `cachetools_003` fails under the
+  runtime in both runs the same way: the first patch fixes both initially failing
+  tests and breaks `test_missing_getsizeof`; ANALYZE now keeps the patch (the
+  2a.1 framing worked) but goes back to localizing, re-reads 100–150-line slices,
+  and the run hits the 100k-token cap at step 15–16 with the regression still
+  in. The baseline fails the same task in one of two runs. Under either arm the
+  binding constraint is context: the full history is replayed on every step.
+  That is Phase 2b.
+
+Next: **2b** — context compaction (spec §8.1 / §12.3): the structured state
+plus the last few tool results instead of the full history, measured on tokens
+per task with success held constant, Haiku first.
 
 ## RepoPilot-Bench v0
 

@@ -205,3 +205,44 @@ Expected:
 
 The context-growth failures (`cachetools_003`-style: 15 steps of 100–150-line
 reads) are not addressed here and are expected to remain; they are 2b's.
+
+### 7.1 Results (2026-09-14, `structured-2a1-haiku45-x2` and `baseline-2a1-haiku45-x2`)
+
+| metric | expected | measured | verdict |
+|---|---|---|---|
+| whitespace-failed `edit_file` calls (Haiku) | 0; `tolerant_edits` > 0 | 0 failed; tolerant 5 (structured) + 3 (baseline), all in runs that passed | ✓ |
+| `toolz_001` | passes in both runs | passed twice: 10 and 7 steps (was 18–19), one tolerant edit each | ✓ |
+| `agent_loop` terminations | 0 | 0 | ✓ |
+| reverts of a patch that had fixed initial failures | 0 | 0 — the 2 resets were `toolz_003` patches that fixed nothing and broke one test | ✓ |
+| structured Haiku success | ≥ 12 / 14 per run | 13 / 14 and 13 / 14, identical verdicts | ✓ |
+| baseline Haiku success | unchanged within one task (11 / 14 ± 1) | 12 / 14 and 14 / 14 | ✗ — see below |
+| tokens per task | roughly unchanged | 56.2k median (was 59–61k) | ✓ |
+
+The control arm moved more than pre-registered. Its three tolerant edits were on
+tasks it had already passed before 2a.1 (`cachetools_001`, `cachetools_002`,
+`toolz_001`), and its former failures (`cachetools_005`, `tenacity_003`,
+`tenacity_004`) passed this time on `budget_tokens` with the patch in place —
+the same tasks it had lost on the cap before. The baseline's outcome on these
+tasks is decided by *where* the cap falls relative to its last edit, which is
+run-to-run variance, not the tool. Its verdicts differ between the two
+repeats on two tasks; the runtime's do not.
+
+Same tools, same budget, Haiku, 2 × 14 each:
+
+| | baseline | structured |
+|---|---|---|
+| success | 26 / 28 | 26 / 28 |
+| identical verdicts across repeats | no (2 tasks flip) | yes |
+| steps / tool calls / test runs | 14.4 / 13.9 / 3.2 | 10.9 / 8.6 / 2.0 |
+| tokens per task (median) | 101.6k | 56.2k |
+| cost per task (median) / total | $0.111 / $2.64 | $0.063 / $1.82 |
+| solve p50 | 27 s | 23 s |
+| `budget_tokens` terminations | 13 / 28 | 3 / 28 |
+| verified on a green full-suite run | – | 25 / 28 |
+
+The remaining structured failure is deterministic: `cachetools_003` in both
+runs — first patch fixes 2 / 2 and breaks `test_missing_getsizeof`, ANALYZE
+keeps the patch (2a.1 worked) but goes back to localizing, re-reads 100–150-line
+slices, and the token cap arrives at step 15–16 with the regression still in.
+Context replay is the binding constraint; that is 2b's target, pre-registered
+there.
