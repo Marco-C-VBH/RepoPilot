@@ -395,3 +395,88 @@ telling the model something untrue under compaction (a false "its result is
 above", a stale "your change has been reverted"); a third would start to look
 like tuning the arm to Haiku on 14 tasks. If the third run does not clear
 `agent_loop` on `toolz_003`, the arm is reported as it is.
+
+### 8.8 Third run (2026-09-18, `structured-2b-haiku45-x2`) — the compact arm as it stands
+
+| metric | §8.7 | third run | |
+|---|---|---|---|
+| `toolz_003` | passes both, `done` | passes both, `done`, 12 steps each (44.7k / 36.6k tokens; full arm 47.6k / 34.0k) | ✓ |
+| `agent_loop` | 0 | 0 | ✓ |
+| success | ≥ 26 / 28 | 26 / 28, identical verdicts across repeats (13 / 14 both, `cachetools_003` the failure both times — the full arm's exact pattern) | ✓ |
+| tokens per task (median) | ≤ 36k | 38.1k (−32% vs. 56.2k) | ✗ |
+| `budget_tokens` | ≤ 1 | 2: `cachetools_003.1` (22 steps, a last edit that broke 21 tests, unverified) and `cachetools_001` (19 steps, cap hit on the reply that carried the *right* edit — PASS) | ✗ |
+| `cachetools_003` | unchanged in kind | both fail: one `no_progress` (the model added a guard, then removed it again and ended the turn with the already-tested diff), one at the cap | ✓ |
+
+The two `toolz_003` runs are the fix working as designed: after the revert
+the model claimed "I've made the fix" without editing (its step-5 edit and
+its success result were still in the window), the runtime's no-edit nudge
+sent it to the state, it read `dissoc` once, applied `try / except KeyError`,
+ended the turn, green, FINALIZE "done". A window step whose effect a later
+reset undid is the last inconsistency the compact prompt can carry; it cost
+one nudge in each run and is left as is (§8.7).
+
+What did not meet §8.7 is the token median, up from 34.8k to 38.1k, with two
+`budget_tokens` instead of one. Both are Haiku's first-hypothesis luck on this
+run, not the context: `cachetools_001` guessed `__contains__` / `__iter__`
+before `expire` (a revert and a second LOCALIZE with five 80–140-line reads,
+each ~2k tokens, so even a three-step window costs 5–8k per prompt), and
+`toolz_001.1` needed three attempts (23 steps, 88k). Five workspace resets
+and eight ANALYZE rounds against two and four in the full arm; the three
+compact runs so far had 3 / 2 / 5 resets, so this is spread, not trend.
+
+The arm against the full history, same tools, 2 × 14 each:
+
+| | full (2a.1) | compact (third run) |
+|---|---|---|
+| success | 26 / 28, identical verdicts | 26 / 28, identical verdicts (same failing task) |
+| steps / tool calls / test runs | 10.9 / 8.6 / 2.0 | 11.2 / 8.9 / 2.2 |
+| tokens median / cost median / total | 56.2k / $0.063 / $1.82 | 38.1k / $0.046 / $1.49 |
+| `budget_tokens` / `agent_loop` / `no_progress` | 3 / 0 / 0 | 2 / 0 / 1 |
+| verified rate | 89.3% | 89.3% |
+| repeated calls (re-reads after the window) | 0 (0) | 10 (9) |
+| forced hypotheses / nudges / resets / ANALYZE rounds | 5 / 0 / 2 / 4 | 10 / 3 / 5 / 8 |
+| steps by phase (localize / patch) | 198 / 71 | 179 / 96 |
+
+Reading: compaction buys a third of the tokens and a quarter of the cost at
+the same success, the same verified rate and the same failing task; the
+price is 0.3 steps per task, nine re-reads in 28 runs and a few more
+interventions. §8.3's ≤ 35k was met once (second run) and missed twice; the
+honest number for the arm is 35–39k. `cachetools_003` stays the task neither
+arm solves reliably (two passes in six compact runs, none in two full runs)
+and it is not a context problem: the failing runs end with the model reading
+`__touch` and the test for the fourth time, not with the cap alone.
+
+## 9. Final Phase 2 comparison (written before running)
+
+The three compact runs were separated by two runtime fixes, so they cannot be
+pooled, and Haiku's spread between runs (25 → 27 → 26 of 28; 38.8k → 34.8k →
+38.1k) is about the size of the differences being claimed. The Phase 2 table
+therefore comes from one experiment on the final code, all arms on the same
+tools, `--repeat 3` (42 runs per arm):
+
+```
+uv run python -m evals.runner --solver baseline   --model claude-haiku-4-5-20251001 --repeat 3 --max-run-cost 10
+uv run python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --repeat 3 --max-run-cost 10
+uv run python -m evals.runner --solver structured --context compact --model claude-haiku-4-5-20251001 --repeat 3 --max-run-cost 10
+```
+
+archived as `baseline-final-haiku45-x3`, `structured-final-full-haiku45-x3`,
+`structured-final-compact-haiku45-x3` (about $4 + $2.7 + $2.2). The baseline's
+code has not changed since 2a.1; it is re-run so that every column has the
+same three repeats. Expected:
+
+| | baseline | full | compact |
+|---|---|---|---|
+| success | 38–40 / 42, verdicts differ across repeats | 39 / 42 (`cachetools_003` ×3) | 39 / 42 (`cachetools_003` ×3, one lucky pass possible) |
+| tokens median | ~100k | 50–60k | 35–40k |
+| cost median | ~$0.11 | ~$0.06 | ≤ $0.047 |
+| `budget_tokens` | ~40% of runs | ≤ 4 / 42 | ≤ 4 / 42 |
+| `agent_loop` | — | 0 | 0 |
+| steps | ~14 | ~11 | ~11 |
+
+Then Sonnet and luna once each with `--context compact` (`structured-2b-sonnet5`,
+`structured-2b-luna`): 14 / 14 both; Sonnet tokens −20–30% against its full
+run; luna is the live test of the window with OpenAI reasoning items (whole
+steps are kept, so each replayed assistant turn carries its own items — a 400
+there is a bug to log, not a result). If any expectation fails, the table
+shows it.

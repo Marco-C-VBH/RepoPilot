@@ -12,9 +12,10 @@ with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
 Phase 2a (structured runtime) and 2a.1 (tolerant edits) — done and measured
-against the baseline, results below; 2b (context compaction) — built, two
-runs measured, each followed by a runtime fix (issues #8, #9); the third run
-is pending.** Every number here is measured by a run archived under
+against the baseline, results below; 2b (context compaction) — built and
+measured (three runs, the first two each followed by a runtime fix, issues #8
+and #9); the final three-arm Phase 2 experiment is pre-registered and
+pending.** Every number here is measured by a run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -401,10 +402,16 @@ beforehand in `docs/runtime-design.md`:
   place: the compact arm re-sent the one-time note "your change has been
   reverted" on every turn after the model's next edit (issue #9: runtime
   events are now dated in the state, the re-sent instructions are bare, and
-  the state says which patch the latest test run saw). `cachetools_003` is
-  the residual in both arms: two passes in four compact runs (62k and 98k
-  tokens), none in the full arm's two. The third run (§8.7) is the last
-  before the Phase 2 table; its numbers go here.
+  the state says which patch the latest test run saw). Run 3, on the code as
+  it stands (`evals/experiments/structured-2b-haiku45-x2`): 26 / 28
+  with the full arm's exact verdict pattern (`cachetools_003` fails both
+  repeats, everything else passes both), `agent_loop` 0, tokens median 38.1k
+  (−32%), cost $0.046 (−27%), steps 11.2 vs. 10.9, nine re-reads of code that
+  had left the window. `cachetools_003` is the residual in both arms: two
+  passes in six compact runs, none in the full arm's two, and the failing
+  runs end with the model re-reading `__touch` and the test, not at the cap
+  alone. The Phase 2 table comes from one final experiment on this code, all
+  three arms at `--repeat 3` (§9, pre-registered).
 
 ## RepoPilot-Bench v0
 
