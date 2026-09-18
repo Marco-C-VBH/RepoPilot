@@ -13,8 +13,10 @@ with every added feature justified by an ablation.
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
 Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
 2b) — done and measured: Haiku with three repeats per arm, Sonnet and luna
-once per arm, results below.** Every number here is measured by a run
-archived under
+once per arm, results below; Phase 3 (retrieval: ast chunks, BM25 + local
+embeddings + symbols, RRF) — built, pre-registered in
+`docs/retrieval-design.md`, runs pending.** Every number here is measured by a
+run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -133,6 +135,7 @@ next lever to measure, not a footnote. The traces behind each number are in
 
 ```bash
 uv sync                                   # creates .venv and installs dev tools
+uv sync --extra retrieval                 # + the local embedding model (fastembed; optional)
 uv run pytest                             # unit tests; Docker tests skip if no daemon
 uv run pytest -m docker                   # sandbox end-to-end tests (needs Docker running)
 uv run ruff check . && uv run ruff format --check .
@@ -217,6 +220,8 @@ uv run python -m evals.runner --solver baseline --max-run-cost 10               
 uv run python -m evals.runner --solver baseline --model gpt-5.6-terra --max-steps 20    # variations
 uv run python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10  # Phase 2a runtime
 uv run python -m evals.runner --solver structured --context compact --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # 2b
+uv run python -m evals.runner --solver structured --context compact --retrieval evidence --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # Phase 3
+uv run python scripts/retrieval_eval.py                # offline: Recall@k / MRR per retrieval configuration, no model
 ```
 
 The agent works on a host-side git checkout of the buggy tree (`repopilot/tools/`)
@@ -465,6 +470,37 @@ beforehand in `docs/runtime-design.md`:
   threshold-triggered hybrid and model-written summaries stay out of scope
   (§8.3); prompt caching on the full-history arm is the open measurement.
 
+## Retrieval (Phase 3)
+
+`repopilot/retrieval/` indexes the buggy tree the agent works on: one chunk per
+function, method, class (header, docstring, attributes and one line per method
+signature) and module (docstring, imports, top-level statements), from Python's
+`ast`; three channels over those chunks — BM25 over code-aware tokens
+(identifiers split on `_` and CamelCase, no dependency), dense embeddings
+(`BAAI/bge-small-en-v1.5` through `fastembed`, ONNX on CPU, no key; a hashing
+stand-in for tests and CI), and a symbol channel that resolves identifiers in
+the query to the chunks that define, contain or import them — fused by
+reciprocal rank fusion (spec §7). The index is rebuilt lazily when the tree
+changes and embeddings are cached per model by chunk hash, so an edit
+re-embeds only what it touched and a second run of a task embeds nothing.
+
+The structured agent gets it two ways, measured separately (`--retrieval`):
+`tool` adds `retrieve(query, k, include_tests)` to LOCALIZE and PATCH, and the
+model decides whether to call it; `evidence` also has the runtime retrieve
+the report's top five chunks before PLAN and keep them in front of the model
+while it plans and localizes (in the PLAN prompt with the full history; in the
+working state with the compact context, dropped once the model is patching).
+Every retrieval is in the trace with each chunk's rank in each channel.
+
+What v0 can measure about it is written down first, in
+`docs/retrieval-design.md`: the leak audit showed localization is free on v0,
+so the prediction is that success does not move; what should move is the
+cost of localization (LOCALIZE was 253 of Haiku's 456 compact steps), and
+retrieval *quality* is measured offline — the report as the query, the task's
+gold files and symbols as the relevant set, Recall@5 / 10 and MRR per channel
+and per fusion (`scripts/retrieval_eval.py`, no model, seconds). Numbers go
+here once the runs are archived.
+
 ## RepoPilot-Bench v0
 
 14 controlled-mutation tasks on three small, pure-Python libraries pinned to one
@@ -527,7 +563,14 @@ repopilot/                 library
   tools/code.py            read_file, search_code, search_symbol (ast index), find_references, edit_file
                            (exact match, else a unique whitespace-tolerant match re-indented to the file)
   tools/toolbox.py         the six tool schemas the model sees + dispatch/validation + run_tests
-                           (workspace diff -> sandbox -> per-test summary)
+                           (workspace diff -> sandbox -> per-test summary); + retrieve with an index
+  retrieval/chunks.py      ast chunks: function / method / class skeleton / module (spec §7.1)
+  retrieval/lexer.py       code tokens (snake_case + CamelCase split); bm25.py: BM25, no deps
+  retrieval/dense.py       Embedder seam: LocalEmbedder (fastembed bge-small) / HashingEmbedder
+                           (tests, CI); cosine search; per-model embedding cache by chunk hash
+  retrieval/symbols.py     identifiers in the query -> the chunks that define / import them
+  retrieval/fusion.py      reciprocal rank fusion (spec §7.3); index.py: RepoIndex, RetrievalConfig
+  retrieval/metrics.py     Recall@k, MRR against gold files / symbols (spec §11.1)
   agent/budget.py          AgentBudget (spec §9.1) + BudgetTracker
   agent/prompts.py         system / task prompts of the baseline; phase prompts of the runtime
   agent/run.py             Termination reasons + AgentRun (metrics, patch, trace) shared by both agents
@@ -536,7 +579,8 @@ repopilot/                 library
   agent/policies.py        phase tool sets, per-phase limits, LoopDetector (spec §9.2), JSON parsing
   agent/runtime.py         StructuredAgent: the state machine (Phase 2a, the treatment arm)
   agent/context.py         context strategies (spec §8 / §12.3): full history, or the working
-                           state + the last K tool steps rebuilt every call (Phase 2b)
+                           state + the last K tool steps rebuilt every call (Phase 2b);
+                           retrieved evidence in the state during PLAN / LOCALIZE (Phase 3)
   tracing/events.py        Trace: JSONL events (model_call, tool_call, phase, test_run, decision,
                            intervention, state, patch, run_end)
   sandbox/limits.py        resource limits applied to every sandbox container
@@ -567,11 +611,14 @@ docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
 docs/leak-audit.md         why v0 saturates: what the agent cannot see, what it did see, ablation plan
-docs/runtime-design.md     Phase 2a design and the pre-registered expectations for the runtime runs
+docs/runtime-design.md     Phase 2 design, pre-registered expectations and results (2a, 2a.1, 2b)
+docs/retrieval-design.md   Phase 3 design and pre-registered expectations (offline and agent-level)
+evals/retrieval.py         offline retrieval evaluation: every configuration on every task
 evals/experiments/         archived runs behind the numbers in this README (summary, results, traces)
 scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py,
                            archive_run.py (results/<run> -> evals/experiments/<name>),
-                           leak_scan.py (traces never contain a hidden test; how each model localizes)
+                           leak_scan.py (traces never contain a hidden test; how each model localizes),
+                           retrieval_eval.py (Recall@k / MRR per channel and fusion, no model)
 tests/                     unit tests (fast) + `-m docker` end-to-end tests;
                            test_benchmark_tasks.py checks the shipped tasks against their sources
 ```

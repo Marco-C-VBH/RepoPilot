@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from repopilot.agent.state import Phase
 
-SEARCH_TOOLS = ("search_code", "search_symbol", "find_references", "read_file")
+# ``retrieve`` (Phase 3) is listed where it belongs; the runtime offers only the
+# tools its toolbox actually has, so a run without retrieval never sees it.
+SEARCH_TOOLS = ("search_code", "search_symbol", "find_references", "read_file", "retrieve")
 PHASE_TOOLS: dict[Phase, tuple[str, ...]] = {
     Phase.PLAN: (),
     Phase.LOCALIZE: SEARCH_TOOLS,
@@ -105,9 +108,9 @@ class LoopDetector:
         return sum(len(steps) - 1 for steps in self.seen.values() if len(steps) > 1)
 
 
-def phase_refusal(phase: Phase, name: str) -> str:
+def phase_refusal(phase: Phase, name: str, available: Sequence[str] | None = None) -> str:
     """Why a tool outside the phase's set is refused, and what to do instead."""
-    allowed = ", ".join(PHASE_TOOLS.get(phase, ())) or "none"
+    allowed = ", ".join(PHASE_TOOLS.get(phase, ()) if available is None else available) or "none"
     if phase is Phase.LOCALIZE and name == "edit_file":
         return (
             "edit_file is not available while localizing. Reply without tool calls to state "

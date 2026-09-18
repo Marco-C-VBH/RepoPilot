@@ -172,6 +172,7 @@ RUNTIME_COUNTERS = (
     "analyze_rounds",
     "workspace_resets",
     "finalize_continues",
+    "retrieve_calls",
 )
 
 
@@ -229,7 +230,8 @@ def format_agent_metrics(metrics: dict[str, Any]) -> str:
             f"forced {runtime['forced_transitions']}, nudges {runtime['nudges']}, refused "
             f"{runtime['refused_tool_calls']}, resets {runtime['workspace_resets']} · "
             f"repeated calls {runtime['repeated_tool_calls']} (re-reads after the window "
-            f"{runtime['rereads']}) · steps after green {runtime['avg_steps_after_green']:.1f}"
+            f"{runtime['rereads']}) · retrieve calls {runtime['retrieve_calls']} · "
+            f"steps after green {runtime['avg_steps_after_green']:.1f}"
         )
         lines.append(
             "  steps by phase: "

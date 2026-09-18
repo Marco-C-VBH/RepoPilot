@@ -29,8 +29,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from repopilot.agent.budget import BudgetTracker
-from repopilot.agent.prompts import TaskInput
-from repopilot.agent.state import AgentState, TestSummary
+from repopilot.agent.prompts import EVIDENCE_HEADER, TaskInput
+from repopilot.agent.state import AgentState, Phase, TestSummary
 from repopilot.models.types import Message, system, user
 from repopilot.tracing.events import clip
 
@@ -188,6 +188,10 @@ def render_state(
         parts.append(
             "What the runtime did, by step:\n" + "\n".join(f"- {clip(n, 300)}" for n in state.notes)
         )
+    # Retrieved evidence is for finding the bug; once the model is patching it
+    # has read what it needs and the block would only cost tokens every step.
+    if state.evidence and state.phase in (Phase.PLAN, Phase.LOCALIZE):
+        parts.append(f"{EVIDENCE_HEADER}\n{state.evidence}")
 
     if state.reads:
         by_path: dict[str, list[str]] = {}

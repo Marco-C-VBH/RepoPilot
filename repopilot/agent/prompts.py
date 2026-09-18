@@ -63,6 +63,8 @@ You are RepoPilot, an autonomous software engineer fixing one bug in a Python re
 
 You work on a checkout of the repository through tools, and only the tools change it:
 - search_code, search_symbol and find_references locate code;
+- retrieve, when offered, ranks function- and class-sized chunks for a question or a \
+description of behaviour (lexical, semantic and symbol search combined);
 - read_file shows a numbered slice of a file;
 - edit_file replaces one exact piece of text in a source file (tests are read-only).
 
@@ -135,8 +137,17 @@ def phase_limit_notice(phase: str, limit: int) -> str:
     return f"The {phase} phase allows at most {limit} of these; end the turn as instructed."
 
 
-def plan_prompt(task: TaskInput, reproduction: str, *, suite_green: bool) -> str:
-    """The task, the reproduction run and the PLAN instructions, as one user message."""
+EVIDENCE_HEADER = (
+    "Retrieved evidence: the chunks of the repository that best match the report (fused "
+    "lexical, semantic and symbol search; read_file for more of any of them):"
+)
+
+
+def plan_prompt(
+    task: TaskInput, reproduction: str, *, suite_green: bool, evidence: str = ""
+) -> str:
+    """The task, the reproduction run, any retrieved evidence and the PLAN
+    instructions, as one user message."""
     if suite_green:
         note = (
             "The visible test suite passes before any change, so it will not point at the "
@@ -144,9 +155,11 @@ def plan_prompt(task: TaskInput, reproduction: str, *, suite_green: bool) -> str
         )
     else:
         note = "Failing tests point at the behaviour to fix; hidden regression tests also decide."
+    evidence_block = f"{EVIDENCE_HEADER}\n{evidence.strip()}\n\n" if evidence.strip() else ""
     return (
         f"{task_prompt(task)}\n"
         f"Initial test run (before any change):\n{reproduction.strip()}\n{note}\n\n"
+        f"{evidence_block}"
         f"{PLAN_INSTRUCTIONS}"
     )
 

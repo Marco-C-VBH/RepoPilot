@@ -1,7 +1,7 @@
 """The tool surface the agent sees (spec §6), and the dispatcher behind it.
 
 ``Toolbox`` binds a ``Workspace`` (host-side working copy) and a sandbox (test
-executor) to six tools:
+executor) to six tools, plus a seventh when a retrieval index is attached:
 
     search_code(query, top_k)          lexical search over the repository
     search_symbol(name, kind)          where a function / class / method is defined
@@ -9,6 +9,7 @@ executor) to six tools:
     read_file(path, start, end)        a bounded, numbered slice of a file
     edit_file(path, old_string, new_string)   one exact replacement; tests are read-only
     run_tests(target)                  the task's test command, or one pytest target
+    retrieve(query, k, include_tests)  fused BM25 + dense + symbol search (Phase 3)
 
 ``specs()`` gives the model the JSON schemas; ``call(name, arguments)`` validates
 the arguments, runs the tool and always returns a ``ToolResult`` -- a model
@@ -19,9 +20,10 @@ can recover from, and is counted as an invalid tool call by the runtime.
 from __future__ import annotations
 
 import shlex
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from repopilot.models.types import ToolSpec
 from repopilot.sandbox.results import ExecResult, TestOutcome, TestRun
@@ -29,6 +31,9 @@ from repopilot.tools import code
 from repopilot.tools.paths import PathError
 from repopilot.tools.results import ToolResult
 from repopilot.tools.workspace import Workspace, WorkspaceError
+
+if TYPE_CHECKING:  # retrieval imports the workspace; keep the runtime import one-way
+    from repopilot.retrieval.index import RepoIndex, RetrievalConfig
 
 MAX_OUTPUT_CHARS = 6000
 MAX_FAILURES_LISTED = 8
@@ -146,6 +151,29 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ),
 )
 
+RETRIEVE_SPEC = ToolSpec(
+    "retrieve",
+    "Find the code most relevant to a question or a description of behaviour: a fused "
+    "lexical (BM25), semantic (embeddings) and symbol search over function-, method- and "
+    "class-sized chunks of the repository. Returns the top-k chunks with their location and "
+    "the first lines of each; use read_file for the rest. Best for prose queries; for an "
+    "exact name use search_symbol.",
+    _schema(
+        {
+            "query": {
+                "type": "string",
+                "description": "what you are looking for, in words or with identifiers",
+            },
+            "k": {"type": "integer", "description": "chunks to return (default 8, max 20)"},
+            "include_tests": {
+                "type": "boolean",
+                "description": "also return chunks from test files (default false)",
+            },
+        },
+        ["query"],
+    ),
+)
+
 _SPEC_BY_NAME = {spec.name: spec for spec in TOOL_SPECS}
 
 
@@ -156,21 +184,25 @@ class Toolbox:
     test_command: str
     test_timeout: float = 300
     max_output_chars: int = MAX_OUTPUT_CHARS
+    retrieval: RepoIndex | None = None  # attached -> the retrieve tool exists
+    retrieval_config: RetrievalConfig | None = None  # defaults when None
 
     def __post_init__(self) -> None:
         self._index = code.SymbolIndex(self.workspace)
         self.test_runs = 0
+        self._specs = dict(_SPEC_BY_NAME)
+        if self.retrieval is not None:
+            self._specs[RETRIEVE_SPEC.name] = RETRIEVE_SPEC
 
-    @staticmethod
-    def specs() -> list[ToolSpec]:
-        return list(TOOL_SPECS)
+    def specs(self) -> list[ToolSpec]:
+        return list(self._specs.values())
 
     # -- dispatch ---------------------------------------------------------------------
     def call(self, name: str, arguments: dict[str, Any] | None) -> ToolResult:
-        spec = _SPEC_BY_NAME.get(name)
+        spec = self._specs.get(name)
         if spec is None:
             return ToolResult.error(
-                f"unknown tool {name!r}; available: {', '.join(_SPEC_BY_NAME)}", invalid=True
+                f"unknown tool {name!r}; available: {', '.join(self._specs)}", invalid=True
             )
         problem = _validate(spec, arguments or {})
         if problem:
@@ -198,7 +230,44 @@ class Toolbox:
             return code.edit_file(ws, args["path"], args["old_string"], args["new_string"])
         if name == "run_tests":
             return self.run_tests(args.get("target"))
-        raise AssertionError(name)  # pragma: no cover - guarded by _SPEC_BY_NAME
+        if name == "retrieve":
+            return self.retrieve(
+                args["query"], k=args.get("k"), include_tests=bool(args.get("include_tests"))
+            )
+        raise AssertionError(name)  # pragma: no cover - guarded by self._specs
+
+    # -- retrieve ---------------------------------------------------------------------
+    def retrieve(
+        self, query: str, *, k: int | None = None, include_tests: bool = False
+    ) -> ToolResult:
+        """The fused top-k chunks for ``query``; the result's meta carries every
+        chunk's per-channel rank and the latency, for the trace."""
+        from repopilot.retrieval.index import DEFAULT_RETRIEVAL, format_results
+
+        if self.retrieval is None:
+            return ToolResult.error("retrieval is not enabled for this run")
+        if not isinstance(query, str) or not query.strip():
+            return ToolResult.error("query must be a non-empty string")
+        config = self.retrieval_config or DEFAULT_RETRIEVAL
+        k = code._clamp_int(k, 1, 20, default=config.k)
+        started = time.perf_counter()
+        results = self.retrieval.search(query.strip(), k=k, include_tests=include_tests)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        output = format_results(
+            results, snippet_lines=config.snippet_lines, budget=self.max_output_chars
+        )
+        return ToolResult(
+            output,
+            meta={
+                "query": query.strip(),
+                "k": k,
+                "include_tests": include_tests,
+                "channels": list(self.retrieval.channels),
+                "results": [r.to_record() for r in results],
+                "files": sorted({r.chunk.path for r in results}),
+                "latency_ms": latency_ms,
+            },
+        )
 
     # -- run_tests --------------------------------------------------------------------
     def test_command_for(self, target: str | None) -> str:

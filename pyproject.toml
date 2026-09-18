@@ -13,6 +13,11 @@ dependencies = [
     "python-dotenv>=1.0",
 ]
 
+[project.optional-dependencies]
+# The dense retrieval channel's local embedding model (BAAI/bge-small-en-v1.5 via
+# ONNX, no torch). Without it, `--embedder hash` is the dependency-free stand-in.
+retrieval = ["fastembed>=0.4"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -34,6 +39,7 @@ addopts = "-q"
 markers = [
     "docker: needs a running Docker daemon (integration test; skipped automatically otherwise)",
     "llm(provider): makes one paid call to that provider; skipped without its API key, never run in CI",
+    "embeddings: loads the local embedding model (needs `uv sync --extra retrieval`; skipped otherwise)",
 ]
 
 [tool.ruff]

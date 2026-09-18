@@ -55,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
     summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
     agent = summary.get("agent") or {}
     print(f"archived {args.run_dir} -> {target}")
+    if summary.get("kind") == "retrieval":  # scripts/retrieval_eval.py output
+        print(
+            f"  retrieval eval · embedder {summary.get('embedder')} · {summary.get('tasks')} "
+            f"task(s) · {', '.join(summary.get('configs', {}))}"
+        )
+        return 0
     print(
         f"  {summary['solver']} · {summary.get('model') or '-'} · {summary['tasks']} task(s) × "
         f"{summary['repeat']} · pass rate {summary['pass_rate']:.1%}"

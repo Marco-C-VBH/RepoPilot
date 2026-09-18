@@ -8,6 +8,46 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 10 · The local-embedder test asserted a judgement, not a wiring
+
+**Date:** 2026-09-18 · **Area:** retrieval / tests · **Severity:** low (test only;
+the dense channel worked: 384-dimensional unit vectors, model downloaded and
+loaded on the first call)
+
+**Symptom.** `tests/test_retrieval_local.py` (marker `embeddings`, the first
+run with `fastembed` installed) failed on its last line: for the query
+"evicting one entry too late when the cache is full" over the demo file's six
+chunks, `bge-small` ranked the *module* chunk first — `DEFAULT_SIZE = 3`, one
+line — ahead of `Cache.put`, the method that evicts.
+
+**Root cause.** What is embedded is the chunk's title plus its text. For a
+one-line chunk the title (`demo/cache.py module (module)`) is most of the
+input, and its path tokens (`cache`) match the query better than `put`'s body
+does, which never says "cache", "evict" or "full" — it says `pop`, `size`,
+`items`. A small embedding model does not bridge that gap on a toy file, and
+the test had asserted it would ("the method is the top hit"). The assertion
+encoded a hope about the model, not a property of the code.
+
+**Fix.** The test checks the seam: vector shape and normalisation, a
+deterministic query embedding, and a *relative* ordering — `put` above its
+sibling `get` for a description of what `put` does. The order is in the
+assertion message so the next mismatch is readable without a round trip.
+
+**Guard.** The question the failed assertion was really asking — how good is
+the dense channel on this benchmark — is answered by `scripts/retrieval_eval.py`
+on the 14 tasks, per channel, against gold files and symbols, and is
+pre-registered as the weakest channel (`docs/retrieval-design.md` §5). If
+module chunks crowd out functions there too, the fix is in the embedding
+text (drop the path for short chunks, or embed body first), decided by that
+measurement, not by a toy.
+
+**Lesson.** A unit test may assert what code does; what a model *judges* is a
+measurement with a sample size, and belongs in the evaluation, not the test
+suite. Tests of a model seam assert shapes, determinism and orderings that
+are robust by construction.
+
+---
+
 ## 9 · Compact context re-sent "your change has been reverted" after the model had edited again
 
 **Date:** 2026-09-18 · **Area:** structured runtime, compact context · **Severity:**

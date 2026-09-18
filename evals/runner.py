@@ -47,6 +47,7 @@ from repopilot.models.config import (
     load_env,
     provider_for,
 )
+from repopilot.retrieval.index import CHANNELS, EMBEDDERS, RETRIEVAL_MODES
 from repopilot.sandbox.docker import docker_status
 from repopilot.sandbox.limits import DEFAULT_LIMITS
 from repopilot.sandbox.repo import DEFAULT_CACHE_DIR
@@ -69,6 +70,7 @@ class RunSummary(BaseModel):
     model: str | None = None
     budget: dict[str, object] | None = None
     context: str | None = None  # structured solver: full | compact (spec §12.3)
+    retrieval: dict[str, object] | None = None  # structured solver: Phase 3 configuration
     agent: dict[str, object] | None = None
     stopped_early: str | None = None  # why the run ended before every task ran
 
@@ -105,6 +107,25 @@ def build_parser() -> argparse.ArgumentParser:
         default="full",
         help="structured solver only: replay the full history, or rebuild each prompt from "
         "the working state plus the last few tool steps (default full)",
+    )
+    agent.add_argument(
+        "--retrieval",
+        choices=RETRIEVAL_MODES,
+        default="none",
+        help="structured solver only: none, tool (the model may call retrieve) or evidence "
+        "(the tool plus the report's top chunks at PLAN); default none",
+    )
+    agent.add_argument(
+        "--embedder",
+        choices=EMBEDDERS,
+        default="local",
+        help="dense channel: local (fastembed bge-small, needs `uv sync --extra retrieval`) "
+        "or hash (dependency-free stand-in); default local",
+    )
+    agent.add_argument(
+        "--channels",
+        default=",".join(CHANNELS),
+        help=f"retrieval channels, comma-separated subset of {','.join(CHANNELS)}",
     )
     agent.add_argument(
         "--max-steps", type=int, help=f"model calls per task (default {DEFAULT_BUDGET.max_steps})"
@@ -182,6 +203,11 @@ def run_benchmark(
         print(
             f"model={solver.model}"
             + (f" context={solver.context}" if getattr(solver, "context", "full") != "full" else "")
+            + (
+                f" retrieval={solver.retrieval} ({solver.embedder}; {','.join(solver.channels)})"
+                if getattr(solver, "retrieval", "none") != "none"
+                else ""
+            )
             + f" budget: {b.max_steps} steps, {b.max_tool_calls} tool calls, "
             f"{b.max_test_runs} test runs, {b.max_tokens} tokens, ${b.max_cost_usd:.2f}, "
             f"{b.max_runtime_seconds:.0f}s per task"
@@ -221,6 +247,8 @@ def run_benchmark(
         summary.model = solver.model
         summary.budget = solver.budget.to_record()
         summary.context = getattr(solver, "context", None)
+        if getattr(solver, "retrieval", "none") != "none":
+            summary.retrieval = solver.retrieval_config().to_record()
     summary.agent = agent_metrics(tasks, results)
     summary.stopped_early = stopped_early
     (out_dir / "summary.json").write_text(summary.model_dump_json(indent=2), encoding="utf-8")
@@ -330,6 +358,16 @@ def build_solver(args: argparse.Namespace) -> Solver:
         if args.solver != "structured":
             raise ConfigError("--context is a structured-solver option")
         options["context"] = args.context
+    if args.retrieval != "none":
+        if args.solver != "structured":
+            raise ConfigError("--retrieval is a structured-solver option")
+        channels = tuple(c.strip() for c in args.channels.split(",") if c.strip())
+        unknown = [c for c in channels if c not in CHANNELS]
+        if unknown or not channels:
+            raise ConfigError(f"--channels must be a subset of {','.join(CHANNELS)}")
+        options["retrieval"] = args.retrieval
+        options["embedder"] = args.embedder
+        options["channels"] = channels
     return get_solver(args.solver, **options)
 
 

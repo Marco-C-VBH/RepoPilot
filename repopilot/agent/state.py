@@ -81,6 +81,7 @@ class AgentState:
     hypotheses: list[Hypothesis] = field(default_factory=list)
     diagnoses: list[str] = field(default_factory=list)  # ANALYZE replies, in order
     notes: list[str] = field(default_factory=list)  # runtime events, dated by step
+    evidence: str = ""  # retrieved chunks for the report (Phase 3, evidence mode)
     visited_files: list[str] = field(default_factory=list)
     reads: list[tuple[str, int, int]] = field(default_factory=list)  # (path, start, end)
     searches: list[str] = field(default_factory=list)  # queries / names looked up
@@ -99,6 +100,7 @@ class AgentState:
     analyze_rounds: int = 0
     workspace_resets: int = 0
     finalize_continues: int = 0
+    retrieve_calls: int = 0  # the model's own retrieve() calls (Phase 3)
     first_green_step: int | None = None
 
     @property
@@ -149,6 +151,8 @@ class AgentState:
             "analyze_rounds": self.analyze_rounds,
             "workspace_resets": self.workspace_resets,
             "finalize_continues": self.finalize_continues,
+            "retrieve_calls": self.retrieve_calls,
+            "evidence_chars": len(self.evidence),
             "first_green_step": self.first_green_step,
         }
         if full:

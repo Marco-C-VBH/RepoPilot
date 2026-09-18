@@ -70,11 +70,19 @@ from repopilot.models.types import (
     tool_result,
     user,
 )
+from repopilot.retrieval.index import DEFAULT_RETRIEVAL, RetrievalConfig, format_results
 from repopilot.tools.results import ToolResult
 from repopilot.tools.toolbox import Toolbox
 from repopilot.tracing.events import Trace, clip, clip_arguments
 
-MODEL_TOOLS = ("search_code", "search_symbol", "find_references", "read_file", "edit_file")
+MODEL_TOOLS = (
+    "search_code",
+    "search_symbol",
+    "find_references",
+    "read_file",
+    "edit_file",
+    "retrieve",  # only when the toolbox has a retrieval index (Phase 3)
+)
 
 
 class StructuredAgent:
@@ -86,6 +94,7 @@ class StructuredAgent:
         *,
         limits: RuntimeLimits = DEFAULT_LIMITS,
         context: ContextConfig = DEFAULT_CONTEXT,
+        retrieval: RetrievalConfig = DEFAULT_RETRIEVAL,
         max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
         system_prompt: str = RUNTIME_SYSTEM_PROMPT,
     ) -> None:
@@ -94,6 +103,7 @@ class StructuredAgent:
         self.budget = budget
         self.limits = limits
         self.context = context
+        self.retrieval = retrieval
         self.max_output_tokens = max_output_tokens
         self.system_prompt = system_prompt
 
@@ -116,7 +126,9 @@ class _Execution:
         self.state = AgentState(task.task_id)
         self.loops = LoopDetector(agent.limits)
         self.specs = {spec.name: spec for spec in self.toolbox.specs()}
+        self.model_tools = [name for name in MODEL_TOOLS if name in self.specs]
         self.context = agent.context
+        self.retrieval = agent.retrieval
         self.messages: list[Message] = [system(agent.system_prompt)]  # the full history
         self.meta: list[tuple[int, str]] = [(0, "system")]  # (step, kind) per message
         self.instruction = ""  # the current phase's instructions (compact mode re-sends them)
@@ -137,7 +149,8 @@ class _Execution:
             budget=self.budget.to_record(),
             limits=self.limits.to_record(),
             context=self.context.to_record(),
-            tools=list(MODEL_TOOLS),
+            retrieval=self.retrieval.to_record(),
+            tools=list(self.model_tools),
             runtime="structured",
         )
         self.initialize()
@@ -187,10 +200,14 @@ class _Execution:
 
     def plan(self) -> Termination | None:
         self.enter(Phase.PLAN)
+        self.gather_evidence()
         self.append(
             user(
                 plan_prompt(
-                    self.task, self.last_test_output, suite_green=self.state.suite_was_green
+                    self.task,
+                    self.last_test_output,
+                    suite_green=self.state.suite_was_green,
+                    evidence=self.state.evidence,
                 )
             ),
             "prompt",
@@ -214,9 +231,35 @@ class _Execution:
         )
         return None
 
+    def gather_evidence(self) -> None:
+        """Evidence mode (Phase 3): the top chunks for the report, retrieved by the
+        runtime before PLAN and kept in the state while the model localizes."""
+        index = self.toolbox.retrieval
+        if not self.retrieval.evidence or index is None:
+            return
+        started = time.perf_counter()
+        results = index.search(self.task.description, k=self.retrieval.evidence_k)
+        self.state.evidence = format_results(
+            results,
+            snippet_lines=self.retrieval.snippet_lines,
+            budget=self.retrieval.evidence_chars,
+        )
+        self.trace.add(
+            "retrieval",
+            step=self.tracker.steps,
+            phase=str(self.state.phase),
+            name="evidence",
+            query=clip(self.task.description, 300),
+            k=self.retrieval.evidence_k,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            chars=len(self.state.evidence),
+            results=[r.to_record() for r in results],
+            index=index.to_record(),
+        )
+
     def localize(self, reason: str | None) -> Termination | None:
         self.enter(Phase.LOCALIZE, reason)
-        allowed = PHASE_TOOLS[Phase.LOCALIZE]
+        allowed = self.tools_for(Phase.LOCALIZE)
         self.instruct(LOCALIZE_INSTRUCTIONS, reason)
         calls_this_visit = 0
         nudged = False
@@ -254,7 +297,7 @@ class _Execution:
 
     def patch(self, reason: str | None) -> Termination | None:
         self.enter(Phase.PATCH, reason)
-        allowed = PHASE_TOOLS[Phase.PATCH]
+        allowed = self.tools_for(Phase.PATCH)
         self.instruct(PATCH_INSTRUCTIONS, reason)
         tested = self.state.patches_tested[-1] if self.state.patches_tested else ""
         edits_this_visit = 0
@@ -371,6 +414,10 @@ class _Execution:
         return "done", None
 
     # -- runtime actions ----------------------------------------------------------------
+    def tools_for(self, phase: Phase) -> tuple[str, ...]:
+        """The phase's tool set, restricted to the tools this toolbox has."""
+        return tuple(name for name in PHASE_TOOLS[phase] if name in self.specs)
+
     def enter(self, phase: Phase, reason: str | None = None) -> None:
         self.state.enter(phase, self.tracker.steps, reason)
         self.trace.add(
@@ -392,7 +439,7 @@ class _Execution:
         self.tracker.steps += 1
         self.state.count_step()
         choice = "auto" if tools else "none"
-        offered = list(tools) if tools else [self.specs[name] for name in MODEL_TOOLS]
+        offered = list(tools) if tools else [self.specs[name] for name in self.model_tools]
         messages = self.prompt_messages()
         try:
             response = self.client.complete(
@@ -507,11 +554,13 @@ class _Execution:
                     self.state.reads.append(
                         (path, int(result.meta.get("start", 1)), int(result.meta.get("end", 0)))
                     )
-                elif call.name in ("search_code", "search_symbol", "find_references"):
+                elif call.name in ("search_code", "search_symbol", "find_references", "retrieve"):
                     query = call.arguments.get("query") or call.arguments.get("name")
                     query = query or call.arguments.get("symbol") or ""
                     if query:
                         self.state.searches.append(str(query))
+                    if call.name == "retrieve":
+                        self.state.retrieve_calls += 1
                 elif call.name == "edit_file":
                     self.files_edited.append(path)
                     self.state.visit(path)
@@ -596,7 +645,10 @@ class _Execution:
                     "invalid",
                 )
             self.state.refused_tool_calls += 1
-            return ToolResult.error(phase_refusal(self.state.phase, call.name)), "phase_refused"
+            return (
+                ToolResult.error(phase_refusal(self.state.phase, call.name, allowed)),
+                "phase_refused",
+            )
         if call.name == "edit_file" and edits_left is not None and edits_left <= 0:
             self.state.refused_tool_calls += 1
             return (
@@ -676,6 +728,8 @@ class _Execution:
             **self.state.to_record(),
             "limits": self.limits.to_record(),
             "context": self.context.to_record(),
+            "retrieval": self.retrieval.to_record(),
+            "index": self.toolbox.retrieval.to_record() if self.toolbox.retrieval else None,
             "verified": verified,
             "steps_after_green": (self.tracker.steps - first_green) if first_green else 0,
             "transitions": self.state.transitions,

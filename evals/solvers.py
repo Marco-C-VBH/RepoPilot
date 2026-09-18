@@ -35,6 +35,8 @@ from repopilot.agent.run import AgentRun
 from repopilot.agent.runtime import StructuredAgent
 from repopilot.models.client import ModelClient, client_for
 from repopilot.models.config import DEFAULT_STRONG_MODEL
+from repopilot.retrieval.dense import Embedder
+from repopilot.retrieval.index import CHANNELS, RepoIndex, RetrievalConfig, make_embedder
 from repopilot.sandbox.docker import Sandbox
 from repopilot.sandbox.limits import DEFAULT_LIMITS, SandboxLimits
 from repopilot.sandbox.repo import DEFAULT_CACHE_DIR
@@ -86,6 +88,14 @@ class AgentSolver:
     def make_agent(self, client: ModelClient, toolbox: Toolbox) -> Agent:
         raise NotImplementedError
 
+    def make_toolbox(self, workspace: Workspace, sandbox: Sandbox, task: Task) -> Toolbox:
+        return Toolbox(
+            workspace,
+            sandbox,
+            test_command=task.test_command,
+            test_timeout=task.env.test_timeout_seconds,
+        )
+
     def solve(self, task: Task, image: str) -> str | None:
         self.last_run = None
         client = self.client_factory(self.model)
@@ -95,12 +105,7 @@ class AgentSolver:
             ) as workspace,
             Sandbox(image, self.limits) as sandbox,
         ):
-            toolbox = Toolbox(
-                workspace,
-                sandbox,
-                test_command=task.test_command,
-                test_timeout=task.env.test_timeout_seconds,
-            )
+            toolbox = self.make_toolbox(workspace, sandbox, task)
             agent = self.make_agent(client, toolbox)
             run = agent.run(
                 TaskInput(
@@ -131,11 +136,44 @@ class StructuredSolver(AgentSolver):
 
     ``context`` selects the context strategy (spec §12.3): ``full`` replays the
     conversation, ``compact`` rebuilds each prompt from the working state.
+    ``retrieval`` (Phase 3, spec §7): ``none``, ``tool`` (the model may call
+    ``retrieve``) or ``evidence`` (the tool, plus the report's top chunks shown
+    at PLAN); ``embedder`` and ``channels`` configure the index.  One embedder
+    is shared across the solver's tasks, so the local model loads once.
     """
 
     name = "structured"
     runtime_limits: RuntimeLimits = DEFAULT_RUNTIME_LIMITS
     context: str = "full"
+    retrieval: str = "none"
+    embedder: str = "local"
+    channels: tuple[str, ...] = CHANNELS
+    _embedder: Embedder | None = field(default=None, init=False, repr=False)
+
+    def retrieval_config(self) -> RetrievalConfig:
+        return RetrievalConfig(
+            mode=self.retrieval, channels=tuple(self.channels), embedder=self.embedder
+        )
+
+    def make_toolbox(self, workspace: Workspace, sandbox: Sandbox, task: Task) -> Toolbox:
+        toolbox = super().make_toolbox(workspace, sandbox, task)
+        config = self.retrieval_config()
+        if config.enabled:
+            if self._embedder is None:
+                self._embedder = make_embedder(config.embedder)
+            toolbox.retrieval = RepoIndex(
+                workspace,
+                channels=config.channels,
+                embedder=self._embedder,
+                per_channel=config.per_channel,
+                cache_dir=self.cache_dir,
+            )
+            toolbox.retrieval_config = config
+            toolbox.__post_init__()  # the retrieve tool joins the specs
+            # Build (and embed) before the agent's clock starts: the index is part
+            # of the environment, not of the run's 600 s.
+            len(toolbox.retrieval.chunks)
+        return toolbox
 
     def make_agent(self, client: ModelClient, toolbox: Toolbox) -> Agent:
         return StructuredAgent(
@@ -144,6 +182,7 @@ class StructuredSolver(AgentSolver):
             self.budget,
             limits=self.runtime_limits,
             context=ContextConfig(mode=self.context),
+            retrieval=self.retrieval_config(),
         )
 
 
