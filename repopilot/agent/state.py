@@ -80,6 +80,7 @@ class AgentState:
     suspects: list[str] = field(default_factory=list)
     hypotheses: list[Hypothesis] = field(default_factory=list)
     diagnoses: list[str] = field(default_factory=list)  # ANALYZE replies, in order
+    notes: list[str] = field(default_factory=list)  # runtime events, dated by step
     visited_files: list[str] = field(default_factory=list)
     reads: list[tuple[str, int, int]] = field(default_factory=list)  # (path, start, end)
     searches: list[str] = field(default_factory=list)  # queries / names looked up
@@ -135,6 +136,7 @@ class AgentState:
             "suspects": self.suspects,
             "hypotheses": [h.to_record() for h in self.hypotheses],
             "diagnoses": [clip(d, 400) for d in self.diagnoses],
+            "notes": [clip(n, 300) for n in self.notes],
             "initial_failures": len(self.initial_failures),
             "test_history": [t.to_record() for t in self.test_history],
             "steps_by_phase": dict(self.steps_by_phase),

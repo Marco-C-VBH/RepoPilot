@@ -217,7 +217,7 @@ class _Execution:
     def localize(self, reason: str | None) -> Termination | None:
         self.enter(Phase.LOCALIZE, reason)
         allowed = PHASE_TOOLS[Phase.LOCALIZE]
-        self.instruct(_with_note(LOCALIZE_INSTRUCTIONS, reason))
+        self.instruct(LOCALIZE_INSTRUCTIONS, reason)
         calls_this_visit = 0
         nudged = False
         forced = False
@@ -255,7 +255,7 @@ class _Execution:
     def patch(self, reason: str | None) -> Termination | None:
         self.enter(Phase.PATCH, reason)
         allowed = PHASE_TOOLS[Phase.PATCH]
-        self.instruct(_with_note(PATCH_INSTRUCTIONS, reason))
+        self.instruct(PATCH_INSTRUCTIONS, reason)
         tested = self.state.patches_tested[-1] if self.state.patches_tested else ""
         edits_this_visit = 0
         nudged = False
@@ -333,6 +333,10 @@ class _Execution:
             self.state.workspace_resets += 1
             self.intervention("workspace_reset")
             note = "Your change has been reverted; the repository is back to its original state."
+            self.state.notes.append(
+                f"step {self.tracker.steps}: at your request the change tested at step "
+                f"{last.step} was reverted; the tree was back to the original."
+            )
         if next_phase == "localize" and active is not None:
             active.status = "rejected"
         return next_phase, note
@@ -358,7 +362,12 @@ class _Execution:
             and self.state.finalize_continues < self.limits.finalize_continues
         ):
             self.state.finalize_continues += 1
-            return "localize", "You chose to continue: " + str(parsed.get("reason") or "")
+            why = str(parsed.get("reason") or "")
+            self.state.notes.append(
+                f"step {self.tracker.steps}: the full suite passed with your change (as it did "
+                f"before any change) and you chose to continue: {clip(why, 300)}"
+            )
+            return "localize", "You chose to continue: " + why
         return "done", None
 
     # -- runtime actions ----------------------------------------------------------------
@@ -428,10 +437,14 @@ class _Execution:
         self.messages.append(message)
         self.meta.append((self.tracker.steps, kind))
 
-    def instruct(self, text: str) -> None:
-        """A phase's instructions: appended once to the history, re-sent each compact turn."""
-        self.append(user(text), "instruction")
-        self.instruction = text
+    def instruct(self, instructions: str, note: str | None = None) -> None:
+        """A phase's instructions: appended once to the history (with the runtime's
+        note on what just happened, when there is one) and re-sent, bare, on every
+        compact turn.  A note is an event -- "your change has been reverted" stops
+        being true at the model's next edit -- so it is dated and kept in the
+        working state instead (issue #9)."""
+        self.append(user(_with_note(instructions, note)), "instruction")
+        self.instruction = instructions
 
     def prompt_messages(self) -> list[Message]:
         """What the model sees this step: the full history, or the compact rebuild."""

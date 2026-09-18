@@ -8,6 +8,62 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 9 · Compact context re-sent "your change has been reverted" after the model had edited again
+
+**Date:** 2026-09-18 · **Area:** structured runtime, compact context · **Severity:**
+medium (both `toolz_003` runs of the second 2b experiment ended `agent_loop`,
+with the right patch in place)
+
+**Symptom.** Re-run after issue #8 (`results/structured-20260918-034526-3e11`):
+27 / 28, but `toolz_003` still ended `agent_loop` twice — this time on a real
+loop, with the correct fix already in the tree (the harness judged both runs
+PASS). Run 2, after ANALYZE reverted the first patch at step 7: the model
+re-read `dissoc` (step 8), applied the right fix (step 9), then read the same
+range at steps 10, 11, 12, 13, 14, 15 — "let me read the original dissoc
+function to see what needs to be fixed" — until the loop detector ended the
+run. It never ended the turn, so the runtime never ran the tests. Run 1 was
+the same shape with one more detour (steps 16–19).
+
+**Root cause.** The runtime attaches a note to the next phase's instructions
+when something happened between phases — here "Your change has been
+reverted; the repository is back to its original state." With the full
+history that note appears once, in order, before the model's next edit. The
+compact context re-sends the current instructions on every turn as the last
+user message, and `instruct()` had stored the note-prefixed text as those
+instructions: after the model's new edit at step 9, every later prompt still
+ended with "your change has been reverted" while the WORKING STATE above it
+showed a current patch and a failed "latest test run with your change" (a run
+of the *reverted* patch, unlabelled). The model believed its edit was gone,
+went looking for "the original" code, found its own patch, and asked again.
+
+**Fix.** Events and instructions are different things. `instruct(instructions,
+note)` appends the note once to the full history (unchanged for the `full`
+arm) and re-sends only the bare instructions. The event goes into the state,
+dated: `AgentState.notes` ("step 7: at your request the change tested at step
+6 was reverted; the tree was back to the original"; likewise a FINALIZE
+"continue"), rendered as "What the runtime did, by step". The state also says
+what the latest test run is evidence about: "on the current patch", "on a
+change since reverted (the tree is back to the original)" or "on a previous
+version of your change (the current patch has not been tested)", decided by
+comparing the current diff with the diff at that run; the patch header carries
+"tested, result below" / "not tested yet".
+
+**Guard.** `tests/test_context.py::test_compact_context_keeps_runtime_events_in_the_state_not_the_instruction`
+(revert, then a new edit: the re-sent instruction never mentions the revert,
+the state dates it, the test section flips from "since reverted" to "a
+previous version") and the rendering cases in
+`test_render_state_carries_task_reads_patch_tests_and_budget`.
+`tests/test_runtime.py::test_failing_verification_goes_through_analyze_and_can_revert`
+keeps the full arm's note in place.
+
+**Lesson.** Same family as #8: compaction turns "what was said once" into
+"what is said every turn", so anything the runtime tells the model must
+either be true at every step it is repeated at, or be dated. The fix was not
+a new prompt but the distinction the runtime already had in its own records —
+which patch a test run saw — surfaced where the model reads it.
+
+---
+
 ## 8 · Loop detector counted re-reads the compact context had made necessary
 
 **Date:** 2026-09-15 · **Area:** structured runtime, compact context · **Severity:**

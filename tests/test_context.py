@@ -96,21 +96,38 @@ def test_render_state_carries_task_reads_patch_tests_and_budget() -> None:
     assert "Files read (line ranges" in text
     assert "demo/cache.py 9-12, 1-8; tests/test_cache.py 1-7" in text
     assert "Searches made: 'Cache.put', 'evict'" in text
-    assert "Current patch (diff against the original tree):\n" + diff.strip() in text
+    assert "Current patch (diff against the original tree; not tested yet):\n" + diff.strip() in (
+        text
+    )
     assert "Latest test run with your change: not run yet." in text
     assert (
         "Budget left: 25 of 30 steps, 36 of 40 tool calls, 4 of 5 test runs, ~100k of 100k tokens."
         in text
     )
 
-    # After a verification: fixed / still / new, and a truncated long diff.
+    # After a verification of this very patch: fixed / still / new, labelled as current.
     state.test_history.append(
         summary("verify", failed=["tests/x.py::t"], fixed=[NODEID], new=["tests/x.py::t"])
     )
+    state.patches_tested.append(diff)
+    text = render_state(TASK, state, tracker, ContextConfig(mode="compact"), diff=diff)
+    assert "Current patch (diff against the original tree; tested, result below):" in text
+    assert (
+        "Latest test run, on the current patch: 3 passed, 1 failed, 0 errors; "
+        "fixed 1 of 1 initially failing, 1 still failing, 1 newly failing." in text
+    )
+    # Edited since: the run is evidence about a previous version (issue #9); long diffs clip.
     config = ContextConfig(mode="compact", patch_chars=30)
     text = render_state(TASK, state, tracker, config, diff=diff * 3)
-    assert "fixed 1 of 1 initially failing, 1 still failing, 1 newly failing." in text
+    assert "Current patch (diff against the original tree; not tested yet):" in text
+    assert "Latest test run, on a previous version of your change (the current patch has" in text
     assert "[diff truncated at 30 chars]" in text
+    # Reverted since: the tree is original again, and the runtime's note says when.
+    state.notes.append("step 6: at your request the change tested at step 5 was reverted")
+    text = render_state(TASK, state, tracker, config, diff="")
+    assert "Current patch: none — the change tested below was reverted." in text
+    assert "Latest test run, on a change since reverted (the tree is back to the original):" in text
+    assert "What the runtime did, by step:\n- step 6: at your request the change tested" in text
 
     # A suite that was green from the start says so; no reads, no patch -> the short forms.
     green = AgentState("demo_001")
@@ -118,6 +135,7 @@ def test_render_state_carries_task_reads_patch_tests_and_budget() -> None:
     text = render_state(TASK, green, BudgetTracker(AgentBudget()), config, diff="")
     assert "all 3 tests passed before any change" in text
     assert "Current patch: none yet." in text and "Files read" not in text
+    assert "What the runtime did" not in text
 
 
 def test_compact_messages_keep_whole_recent_steps_and_resend_the_instruction() -> None:
@@ -265,7 +283,7 @@ def test_compact_runtime_sends_state_window_and_instruction_each_step(tmp_path: 
     # Step 7: the edit's result is in the window and the diff is in the state.
     seventh = calls[6].messages
     assert any(m.tool_call_id == "e1" for m in seventh)
-    assert "Current patch (diff against the original tree):" in seventh[1].content
+    assert "Current patch (diff against the original tree; not tested yet):" in seventh[1].content
     assert "+        if len(self.items) >= self.size:" in seventh[1].content
     assert "Budget left: 23 of 30 steps" in seventh[1].content  # step 7 counts as spent
     # Every prompt is bounded: the full history is never sent.
@@ -281,15 +299,13 @@ def test_compact_runtime_sends_state_window_and_instruction_each_step(tmp_path: 
     assert run.trace.events[0].data["context"]["window_steps"] == 2
 
 
-def compact_agent(tmp_path: Path, script: list, *, window_steps: int = 2):
+def compact_agent(tmp_path: Path, script: list, *, window_steps: int = 2, runs: list = ()):
     root = tmp_path / "repo"
     init_repo(root, DEMO_FILES)
+    failing, passing = make_run(**{NODEID: "failed"}), make_run(**{NODEID: "passed"})
     toolbox = Toolbox(
         Workspace.from_repo(root),
-        ScriptedSandbox(
-            run=make_run(**{NODEID: "passed"}),
-            runs=[make_run(**{NODEID: "failed"}), make_run(**{NODEID: "passed"})],
-        ),
+        ScriptedSandbox(run=passing, runs=list(runs) or [failing, passing]),
         test_command=TASK.test_command,
     )
     client = FakeClient(script=script)
@@ -343,6 +359,67 @@ def test_compact_context_rereads_outside_the_window_are_not_loops(tmp_path: Path
     # The notice was true when it was sent: both earlier results were in the prompt.
     seventh = client.calls[6].messages
     assert [c.id for m in seventh for c in m.tool_calls] == ["r1", "r1"]
+
+
+def test_compact_context_keeps_runtime_events_in_the_state_not_the_instruction(
+    tmp_path: Path,
+) -> None:
+    """Issue #9: "your change has been reverted" is an event, dated in the state; the
+    re-sent instruction stays bare, and the test section names the patch it ran on."""
+    failing, passing = make_run(**{NODEID: "failed"}), make_run(**{NODEID: "passed"})
+    wrong = ToolCall(
+        "w1",
+        "edit_file",
+        {
+            "path": "demo/cache.py",
+            "old_string": "DEFAULT_SIZE = 3",
+            "new_string": "DEFAULT_SIZE = 4",
+        },
+    )
+    revert = json.dumps({"diagnosis": "wrong constant", "next": "patch", "keep_patch": False})
+    agent, client = compact_agent(
+        tmp_path,
+        [
+            response(PLAN),  # 1
+            response("the default size"),  # 2 hypothesis
+            response("", (wrong,)),  # 3 PATCH
+            response("bumped the default"),  # 4 -> TEST fails
+            response(revert),  # 5 ANALYZE: revert
+            response("", (READ,)),  # 6 PATCH again: a read first
+            response("", (EDIT,)),  # 7 the real fix
+            response("changed the comparison"),  # 8 -> TEST green -> DONE
+        ],
+        window_steps=3,
+        runs=[failing, failing, passing],
+    )
+    run = agent.run(TASK)
+    assert run.termination is Termination.DONE and run.runtime["workspace_resets"] == 1
+
+    calls = client.calls
+    # Step 6, right after the revert: the instruction is the bare PATCH one ...
+    sixth = calls[5].messages
+    assert sixth[-1].content.startswith("Phase: PATCH")
+    assert "reverted" not in sixth[-1].content
+    # ... and the state carries the event, the empty tree and the run's provenance.
+    state = sixth[1].content
+    assert "What the runtime did, by step:\n- step 5: at your request the change tested" in state
+    assert "Current patch: none — the change tested below was reverted." in state
+    assert "Latest test run, on a change since reverted (the tree is back to the original)" in state
+    assert "DEFAULT_SIZE" not in state.split("Current patch")[1].split("Latest test run")[0]
+    # Step 8, after the new edit: the patch is there and marked untested; the old run
+    # is marked as belonging to a previous version.
+    eighth = calls[7].messages
+    state = eighth[1].content
+    assert "Current patch (diff against the original tree; not tested yet):" in state
+    assert "+        if len(self.items) >= self.size:" in state
+    assert "Latest test run, on a previous version of your change" in state
+    assert eighth[-1].content.startswith("Phase: PATCH") and "reverted" not in eighth[-1].content
+    # The event is on the record (the full-history arm still gets the note once, in
+    # place: see test_runtime.py::test_failing_verification_goes_through_analyze_and_can_revert).
+    assert run.runtime["notes"] == [
+        "step 5: at your request the change tested at step 4 was reverted; the tree was back "
+        "to the original."
+    ]
 
 
 def test_compact_context_still_ends_a_loop_the_model_can_see(tmp_path: Path) -> None:

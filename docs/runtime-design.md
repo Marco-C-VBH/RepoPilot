@@ -277,9 +277,12 @@ user        WORKING STATE, rendered from AgentState:
               task (repository, test command, bug report verbatim)
               initial test run: counts + one line per failing test (≤ 8)
               plan, suspects, hypotheses (active / tested / rejected), diagnoses
+              what the runtime did, dated by step (reverts, continues; since #9)
               files read (path + line ranges only), searches made
-              current patch: the diff, verbatim, clipped to 2,000 characters
-              latest test run with the patch: fixed / still failing / newly failing
+              current patch: the diff, verbatim, clipped to 2,000 characters,
+                marked tested / not tested yet (since #9)
+              latest test run: fixed / still failing / newly failing, and which
+                patch it ran on — current, reverted, or a previous version (since #9)
               budget left: steps, tool calls, test runs, tokens
 ...         the last `window_steps` (= 3) tool-calling steps, whole: the
             assistant message with its tool calls, the tool results, any nudge
@@ -344,3 +347,51 @@ runs (the artifact is gone); success ≥ 26 / 28; `agent_loop` 0; tokens median
 the residual, reported as such); `rereads` > 0 (the price, now visible).
 §8.3 stays the standard the arm is judged against; the re-run only removes the
 artifact.
+
+### 8.6 Second run (2026-09-18, `structured-2b-haiku45-x2-run2`)
+
+| metric | §8.3 | §8.5 | second run | |
+|---|---|---|---|---|
+| tokens per task (median) | ≤ 35k | ≤ 40k | 34.8k (−38% vs. 56.2k) | ✓ ✓ |
+| cost per task (median) | ≤ $0.045 | — | $0.043 (−32%; total $1.42) | ✓ |
+| success | ≥ 26 / 28, identical verdicts | ≥ 26 / 28 | 27 / 28; `cachetools_003` flips | ✓ / ✗ identical |
+| `toolz_003` | — | passes both | passes both — but both end `agent_loop` | ✓ / ✗ |
+| `agent_loop` | — | 0 | 2 | ✗ |
+| `budget_tokens` | 0 | ≤ 1 | 1 (`cachetools_003.1`, 26 steps, 101k, regression left in) | ✗ ✓ |
+| `cachetools_003` | passes, < 45k | — | run 1 passes at 25 steps / 98k; run 2 hits the cap | ✗ |
+| steps per task | 10.9, may rise 1–2 | — | 10.8 (tool calls 8.8, test runs 2.0) | ✓ |
+| `rereads` | — | > 0 | 14 (of 21 repeated calls; 0 loop notices outside `toolz_003`) | ✓ |
+
+The token and cost goals are met, and success is a point above the full arm.
+Two things are not what §8.5 predicted. `toolz_003` passes both runs on the
+patch in place, yet both runs end `agent_loop` — real loops this time, the
+detector was right: after ANALYZE reverted a first attempt, the model applied
+the correct fix and then read the same 26 lines four to six times in a row
+("let me read the original dissoc function to see what needs to be fixed")
+instead of ending its turn. The cause is the compact context again, one layer
+up (issue #9): the runtime's one-time note "your change has been reverted"
+had been folded into the phase instructions the compact arm re-sends every
+turn, so after the model's new edit the last message in every prompt told it
+the tree was original — while the state showed a patch and, unlabelled, the
+failed run of the *reverted* patch. Fixed before the third run: the note is
+an event dated in the state ("what the runtime did, by step"), the re-sent
+instructions are bare, and the state now says which patch the latest test
+run saw and whether the current one has been tested.
+
+`cachetools_003` is the residual and it did not move: one run passes at 98k
+(the full arm never passed it), the other spends 10 PATCH steps re-reading
+`__touch` and the test without editing and hits the cap. Not a context
+problem at a 35k median; the model does not reliably find the guard (`key in
+self.__order`) from what it reads — two passes in the four compact runs so
+far, none in the full arm's two.
+
+### 8.7 Third run (written before running)
+
+Same command. Expected: `toolz_003` passes both with `done` (`agent_loop` 0);
+success ≥ 26 / 28; tokens median ≤ 36k; `cachetools_003` unchanged in kind
+(may pass or hit the cap; `budget_tokens` ≤ 1). This is the last change to
+the compact arm before the Phase 2 table: two fixes were both the runtime
+telling the model something untrue under compaction (a false "its result is
+above", a stale "your change has been reverted"); a third would start to look
+like tuning the arm to Haiku on 14 tasks. If the third run does not clear
+`agent_loop` on `toolz_003`, the arm is reported as it is.

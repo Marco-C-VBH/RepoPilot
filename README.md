@@ -12,9 +12,9 @@ with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
 Phase 2a (structured runtime) and 2a.1 (tolerant edits) — done and measured
-against the baseline, results below; 2b (context compaction) — built, first
-run measured, re-run after a runtime fix (issue #8) pending.** Every number
-here is measured by a run archived under
+against the baseline, results below; 2b (context compaction) — built, two
+runs measured, each followed by a runtime fix (issues #8, #9); the third run
+is pending.** Every number here is measured by a run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -389,16 +389,22 @@ beforehand in `docs/runtime-design.md`:
   diagnoses, files read as line ranges, searches, the current diff, the latest
   test run, budget left) plus the last three tool-calling steps verbatim and
   the current phase's instructions; nothing is summarised by a model. A replay
-  of the 2a.1 traces predicted 55–60% of the cumulative tokens; the first
-  Haiku run (2 × 14, `evals/experiments/structured-2b-haiku45-x2-run1`) gave
-  −31% tokens and −24% cost at the same 10.9 steps, but 25 / 28: two
-  `agent_loop` failures on `toolz_003` were the runtime's fault — the loop
-  detector refused the re-reads its own context strategy had made necessary
-  (issue #8, fixed: signatures carry the workspace version, only calls the
-  model can still see count, re-reads are tallied as `rereads`) — and
-  `cachetools_003` split, one pass at 62k tokens where the full arm had failed
-  twice at 100k+, one cap at 24 steps. The re-run after the fix is
-  pre-registered in §8.5; its numbers go here.
+  of the 2a.1 traces predicted 55–60% of the cumulative tokens. Two Haiku
+  runs so far (2 × 14 each, `evals/experiments/structured-2b-haiku45-x2-run1`
+  and `-run2`), each followed by a runtime fix the traces demanded. Run 1:
+  −31% tokens, −24% cost, 25 / 28 — both `toolz_003` failures were the loop
+  detector refusing re-reads its own context strategy had made necessary
+  (issue #8: signatures now carry the workspace version, only calls the model
+  can still see count, re-reads are tallied as `rereads`). Run 2: −38%
+  tokens (median 34.8k), −32% cost ($0.043), 27 / 28 at the same 10.8 steps —
+  but `toolz_003` still ended `agent_loop` twice, now with the right patch in
+  place: the compact arm re-sent the one-time note "your change has been
+  reverted" on every turn after the model's next edit (issue #9: runtime
+  events are now dated in the state, the re-sent instructions are bare, and
+  the state says which patch the latest test run saw). `cachetools_003` is
+  the residual in both arms: two passes in four compact runs (62k and 98k
+  tokens), none in the full arm's two. The third run (§8.7) is the last
+  before the Phase 2 table; its numbers go here.
 
 ## RepoPilot-Bench v0
 

@@ -6,9 +6,12 @@
              the last few tool steps verbatim (Phase 2b):
 
     system     the runtime prompt + how to read the working state
-    user       WORKING STATE: task, initial failures, plan, hypotheses, files
-               read (ranges only), searches made, current patch, latest test
-               run, budget left  -- rendered from ``AgentState``, no model summary
+    user       WORKING STATE: task, initial failures, plan, hypotheses,
+               diagnoses, what the runtime did (reverts, continues; dated by
+               step), files read (ranges only), searches made, current patch
+               (and whether it was tested), latest test run (and on which
+               patch), budget left  -- rendered from ``AgentState``, no model
+               summary
     ...        the last ``window_steps`` tool steps, whole (assistant message
                with its tool calls, the tool results, any runtime nudge)
     user       the current phase's instructions
@@ -36,10 +39,12 @@ CONTEXT_MODES = ("full", "compact")
 COMPACT_NOTE = """\
 
 How your context works: every turn starts with a WORKING STATE the runtime keeps \
-current (task, plan, hypotheses, files you have read, your current patch, the latest \
-test run, budget left), followed by your most recent tool calls and their results \
-verbatim. Older tool outputs are not repeated; if you need code you read earlier, \
-read it again. Your hypothesis and diagnoses are kept in the state.
+current (task, plan, hypotheses, files you have read, your current patch and whether \
+it has been tested, the latest test run and which patch it ran on, budget left), \
+followed by your most recent tool calls and their results verbatim. Older tool outputs \
+are not repeated; if you need code you read earlier, read it again. Your hypothesis, \
+your diagnoses and what the runtime did (such as reverting a change) are kept in the \
+state, dated by step.
 """
 
 
@@ -94,16 +99,32 @@ def failure_lines(detail: str, *, limit: int, chars: int) -> list[str]:
     return out
 
 
-def _test_section(summary: TestSummary | None, config: ContextConfig, *, initial: int) -> str:
+_TESTED_HEADS = {
+    "current": "Latest test run, on the current patch",
+    "reverted": "Latest test run, on a change since reverted (the tree is back to the original)",
+    "earlier": (
+        "Latest test run, on a previous version of your change (the current patch has not "
+        "been tested)"
+    ),
+}
+
+
+def _test_section(
+    summary: TestSummary | None, config: ContextConfig, *, initial: int, tested: str
+) -> str:
+    """The latest verification run, labelled with the patch it ran on.
+
+    A run is evidence about the tree it saw and nothing else; ``tested`` says
+    how that tree relates to the current one (issue #9).
+    """
     if summary is None:
         return "Latest test run with your change: not run yet."
+    head = _TESTED_HEADS[tested]
     if summary.is_error:
-        return "Latest test run with your change: could not complete —\n" + clip(
-            summary.detail, 600
-        )
-    head = (
-        f"Latest test run with your change: {summary.passed} passed, {summary.failed} failed, "
-        f"{summary.errors} errors; fixed {len(summary.fixed)} of {initial} initially failing, "
+        return head + ": could not complete —\n" + clip(summary.detail, 600)
+    head += (
+        f": {summary.passed} passed, {summary.failed} failed, {summary.errors} errors; "
+        f"fixed {len(summary.fixed)} of {initial} initially failing, "
         f"{len(summary.still_failing)} still failing, {len(summary.newly_failing)} newly failing."
     )
     details = failure_lines(summary.detail, limit=config.max_failures, chars=config.failure_chars)
@@ -163,6 +184,10 @@ def render_state(
             "Your diagnoses after failed test runs:\n"
             + "\n".join(f"- {clip(d, 400)}" for d in state.diagnoses)
         )
+    if state.notes:
+        parts.append(
+            "What the runtime did, by step:\n" + "\n".join(f"- {clip(n, 300)}" for n in state.notes)
+        )
 
     if state.reads:
         by_path: dict[str, list[str]] = {}
@@ -175,6 +200,17 @@ def render_state(
     if state.searches:
         parts.append("Searches made: " + ", ".join(repr(q) for q in state.searches[-12:]))
 
+    # The latest verification run is evidence about the tree it ran on; say how
+    # that tree relates to the current one (issue #9).
+    verify = next((t for t in reversed(state.test_history) if t.phase == "verify"), None)
+    last_tested = state.patches_tested[-1] if state.patches_tested else ""
+    if not diff.strip():
+        tested = "reverted"
+    elif diff == last_tested:
+        tested = "current"
+    else:
+        tested = "earlier"
+
     if diff.strip():
         shown = (
             diff
@@ -184,12 +220,14 @@ def render_state(
                 + f"\n... [diff truncated at {config.patch_chars} chars]"
             )
         )
-        parts.append("Current patch (diff against the original tree):\n" + shown)
+        status = "tested, result below" if tested == "current" else "not tested yet"
+        parts.append(f"Current patch (diff against the original tree; {status}):\n" + shown)
+    elif verify is not None:
+        parts.append("Current patch: none — the change tested below was reverted.")
     else:
         parts.append("Current patch: none yet.")
 
-    verify = next((t for t in reversed(state.test_history) if t.phase == "verify"), None)
-    parts.append(_test_section(verify, config, initial=len(state.initial_failures)))
+    parts.append(_test_section(verify, config, initial=len(state.initial_failures), tested=tested))
 
     b = tracker.budget
     parts.append(
