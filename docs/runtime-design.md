@@ -528,3 +528,61 @@ efficiency and reliability, not success rate: on v0 the success rate is set by
 the model's first hypothesis on two cachetools tasks, and no arm moves it.
 
 Still to run: Sonnet and luna once each with `--context compact`.
+
+### 9.2 Sonnet and luna with the compact context (2026-09-18, `structured-2b-sonnet5`, `structured-2b-luna`)
+
+Expected: 14 / 14 both; Sonnet tokens −20–30% against its full-history run;
+luna a live test of the window with reasoning items.
+
+| | Sonnet full (`structured-v0-sonnet5`) | Sonnet compact | luna full (`structured-v0-luna`) | luna compact |
+|---|---|---|---|---|
+| success | 14 / 14 | 14 / 14 ✓ | 14 / 14 | 14 / 14 ✓ |
+| steps / tool calls / test runs | 6.9 / 3.9 / 2.0 | 6.9 / 3.9 / 2.0 | 8.1 / 9.2 / 2.1 | 8.3 / 10.4 / 2.1 |
+| tokens per task (median) | 22.4k | 23.2k (+3%) ✗ | 39.0k | 32.5k (−17%) |
+| input per call (median / p90 / max) | 3.2k / 5.6k / 8.3k | 3.2k / 5.4k / 6.7k | 4.9k / 8.6k / 9.5k | 2.5k / 8.3k / 12.4k |
+| input tokens served from a prompt cache | 0 | 0 | 64% | 0% |
+| output tokens (total, 14 tasks) | 13.7k | 16.5k | 11.2k (1.3k reasoning) | 13.7k (3.0k reasoning) |
+| cost per task (median) / total | $0.0535 / $0.84 | $0.0537 / $0.85 | $0.0045 / $0.059 | $0.0074 / $0.103 (+64% / +75%) |
+| invalid calls | 0.0% | 0.0% | 10.9% | 8.9% (13 × `edit_file(replacement=…)`) |
+| failed edits / interventions | – | 0 / none | – | 3 / 2 forced hypotheses, 1 ANALYZE |
+| model errors | 0 | 0 | 0 | 0 |
+
+Two negative results, for two different reasons.
+
+*Sonnet: nothing to compact.* Its runs are 6.9 steps, and the compact prompt
+(system, a ~2k state, three whole steps, the instruction) is the same size as
+a seven-step history: 3.2k input tokens per call, median, under either
+context. Only the worst case moved (max 8.3k → 6.7k). The +3% is the state's
+fixed overhead. Compaction pays when the history outgrows the window, which
+on v0 happens to Haiku (11 steps, 4.6k → 3.6k per call) and not to Sonnet.
+The −20–30% expectation was extrapolated from Haiku's step counts and was
+wrong for Sonnet's.
+
+*Luna: fewer tokens, higher cost.* Prompts shrank as designed (4.9k → 2.5k per
+call, −17% per task) and the task cost 64% more. OpenAI caches prompt prefixes
+automatically and bills a cache hit at a tenth of the input price; with the
+full history, 64% of luna's input tokens were cache reads, because every
+turn appends to a prefix the server has already seen. A working state
+rebuilt on every step has no stable prefix, so the compact arm cached
+nothing, and its uncached 432k input tokens cost more than the full arm's 540k
+mostly-cached ones. Luna also reasoned more per step (reasoning tokens 1.3k →
+3.0k over the run) — re-orienting on a fresh prompt each turn is not free.
+Anthropic caches only on request and no Claude run here asked for it, so the
+Haiku and Sonnet comparisons are between two uncached arms; the same effect
+would appear there the moment the full arm sets `cache_control`.
+
+The window itself worked with OpenAI's reasoning items: 116 calls, no 400, no
+model error — whole steps carry their own items.
+
+What this changes. The design was aimed at tokens per task (§8.1), and on
+tokens compaction wins on two of three models; on cost per task it wins on
+one (Haiku, uncached), ties on one (Sonnet) and loses on one (luna, cached).
+Cost is the metric that matters, and cost depends on a lever the 2b design
+deliberately left out (§8.3: "prompt caching — a price lever, measured
+separately"). The two are not separable: caching favours an append-only
+history, compaction destroys it. The next measurement is therefore the
+full-history arm *with* caching on Anthropic (`cache_control` on the system
+prompt and the last history block; automatic on OpenAI already) against the
+compact arm, on Haiku, where compaction currently wins by 29% on cost. If
+cached-full beats compact on cost, compaction's remaining case is the cap:
+the runs the full history cannot finish under 100k tokens.

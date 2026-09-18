@@ -12,9 +12,9 @@ with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
 Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
-2b) — done and measured on Haiku with three repeats per arm, results below;
-Sonnet and luna compact runs pending.** Every number here is measured by a
-run archived under
+2b) — done and measured: Haiku with three repeats per arm, Sonnet and luna
+once per arm, results below.** Every number here is measured by a run
+archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -75,17 +75,20 @@ plus the last three tool steps instead of replaying the whole history
 | | **structured, full history** (3 × 14) | **40 / 42** | 11.2 | 8.4 | 2.1 | 57.6k | $0.066 | 22 s | 4 / 42 | 90.5% | 0.3% | no (1 task flips) |
 | | **structured, compact context** (3 × 14) | **40 / 42** | **10.9** | 8.5 | 2.2 | **38.4k** | **$0.047** | 24 s | **2 / 42** | **95.2%** | 1.7% | no (2 tasks flip) |
 | `gpt-5.6-luna` (1 × 14) | baseline | 14 / 14 | 7.7 | 10.3 | 2.1 | 33.7k | $0.003 | 18 s | 0 | – | 8.3% | – |
-| | structured, full history | 14 / 14 | 8.1 | 9.2 | 2.1 | 39.0k | $0.0045 | 20 s | 0 | – | – | – |
+| | structured, full history | 14 / 14 | 8.1 | 9.2 | 2.1 | 39.0k | $0.0045 (64% of input served from OpenAI's prompt cache) | 20 s | 0 | 100% | 10.9% | – |
+| | structured, compact context | 14 / 14 | 8.3 | 10.4 | 2.1 | 32.5k | $0.0074 (0% cached) | 20 s | 0 | 100% | 8.9% | – |
 | `claude-sonnet-5` (1 × 14; baseline 3 × 14) | baseline | 42 / 42 | 5.9 | ≈5 | 1.1 | 18.7k | $0.045 | 15 s | 0 | – | 1.4% | yes |
-| | structured, full history | 14 / 14 | 6.9 | 3.9 | 2.0 | 22.4k | $0.053 | 16 s | 0 | – | – | – |
+| | structured, full history | 14 / 14 | 6.9 | 3.9 | 2.0 | 22.4k | $0.053 | 16 s | 0 | 100% | 0.0% | – |
+| | structured, compact context | 14 / 14 | 6.9 | 3.9 | 2.0 | 23.2k | $0.054 | 23 s | 0 | 100% | 0.0% | – |
 
 Haiku rows: `evals/experiments/baseline-2a1-haiku45-x2/`,
 `structured-final-full-haiku45-x3/` and `structured-final-compact-haiku45-x3/`
 — the two structured arms are one experiment on the final code, run back to
 back (2026-09-18, pre-registered in `docs/runtime-design.md` §9); the
 baseline is the earlier 2 × 14 run, its code unchanged since. Luna and Sonnet
-rows: `baseline-v0-*` and `structured-v0-*` (older tool version; their
-compact runs are pending).
+rows: `baseline-v0-*`, `structured-v0-*` (full history, 2026-09-15, the tool
+version before 2a.1) and `structured-2b-luna` / `structured-2b-sonnet5`
+(compact, 2026-09-18).
 
 What the table says. The runtime does not raise Haiku's success rate on v0 —
 26 / 28 baseline, 40 / 42 in both structured arms, all within one task of
@@ -106,7 +109,24 @@ a third; the model then re-reads `__touch` and the test until the cap) passes
 `cachetools_001` went after the wrong method first and ran out of budget
 re-localising. The capable models pay for the structure: one extra step
 (PLAN) and +19% (Sonnet) / +55% (luna, on $0.003) cost per task with the full
-history. The traces behind each number are in
+history.
+
+Compaction on the capable models is the negative result of Phase 2, and it
+has two different causes. Sonnet finishes in 6.9 steps, and a run that short
+never grows past the window: its prompts are the same size under either
+context (3.2k tokens per call, median), so tokens and cost are unchanged
+(+3%, flat) — compaction only pays once the history is longer than the state
+plus three steps, which on v0 is Haiku's problem, not Sonnet's. Luna's
+prompts *did* shrink (4.9k → 2.5k per call, −17% tokens per task) and the task
+still cost 64% more, because OpenAI caches prompt prefixes automatically and
+bills cache hits at a tenth: with the full history 64% of luna's input tokens
+were cache reads; a state that is rebuilt every step has no stable prefix,
+so the compact arm cached nothing. (Anthropic caches only on request; no
+Claude run here used it, so the Haiku and Sonnet comparisons are between two
+uncached arms.) Tokens per task, the metric the design was aimed at, would
+have called luna a win; cost per task says the opposite, and cost is the
+metric that matters. Prompt caching on the full-history arm is therefore the
+next lever to measure, not a footnote. The traces behind each number are in
 [Phase 2a findings](#phase-2a-findings).
 
 ## Setup
@@ -439,8 +459,11 @@ beforehand in `docs/runtime-design.md`:
   `start="[418, 450]"`. Every §9 expectation held except the failing tasks'
   names: `cachetools_003` passed twice in three compact runs, and
   `cachetools_001` failed once (a wrong first method, then re-localisation to
-  the cap). Prompt caching, a threshold-triggered hybrid and model-written
-  summaries stay out of scope (§8.3).
+  the cap). On Sonnet and luna, compaction did not pay (Sonnet's runs are
+  too short to compact; luna's cost rose 64% because rebuilding the prompt
+  forfeits OpenAI's automatic prefix cache — see the table). A
+  threshold-triggered hybrid and model-written summaries stay out of scope
+  (§8.3); prompt caching on the full-history arm is the open measurement.
 
 ## RepoPilot-Bench v0
 
