@@ -1,0 +1,137 @@
+{
+  "run_id": "structured-20260918-044104-36eb",
+  "solver": "structured",
+  "tasks": 14,
+  "repeat": 3,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 2,
+    "PASS": 40
+  },
+  "pass_rate": 0.9524,
+  "deterministic": false,
+  "nondeterministic_tasks": [
+    "cachetools_003"
+  ],
+  "duration_seconds": 1023.428,
+  "started_at": "2026-09-18T08:41:04+00:00",
+  "finished_at": "2026-09-18T08:58:08+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/structured-20260918-044104-36eb",
+  "model": "claude-haiku-4-5-20251001",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "context": "full",
+  "agent": {
+    "results": 42,
+    "success_rate": 0.9524,
+    "patch_rate": 0.9762,
+    "regression_rate": 0.0238,
+    "avg_steps": 11.19,
+    "avg_tool_calls": 8.381,
+    "avg_test_runs": 2.071,
+    "invalid_tool_call_rate": 0.0028,
+    "edits": 50,
+    "failed_edits": 0,
+    "tolerant_edits": 1,
+    "edit_failure_rate": 0.0,
+    "terminations": {
+      "done": 38,
+      "budget_tokens": 4
+    },
+    "tokens_mean": 57939,
+    "tokens_median": 57580,
+    "cost_total_usd": 2.7632,
+    "cost_mean_usd": 0.066,
+    "cost_median_usd": 0.0659,
+    "solve_p50_seconds": 21.9,
+    "solve_p95_seconds": 33.3,
+    "failures": {
+      "budget_exceeded": 1,
+      "regression_introduced": 1
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 6,
+        "total": 6
+      },
+      "exception_handling": {
+        "pass": 6,
+        "total": 6
+      },
+      "missing_check": {
+        "pass": 6,
+        "total": 6
+      },
+      "off_by_one": {
+        "pass": 6,
+        "total": 6
+      },
+      "retry_logic": {
+        "pass": 6,
+        "total": 6
+      },
+      "state_management": {
+        "pass": 4,
+        "total": 6
+      },
+      "wrong_condition": {
+        "pass": 6,
+        "total": 6
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "pass": 9,
+        "total": 9
+      },
+      "hard": {
+        "pass": 9,
+        "total": 9
+      },
+      "medium": {
+        "pass": 22,
+        "total": 24
+      }
+    },
+    "runtime": {
+      "results": 42,
+      "verified_rate": 0.9048,
+      "loop_rate": 0.0,
+      "intervention_rate": 0.1429,
+      "avg_steps_after_green": 0.0,
+      "avg_initial_failures": 7.214,
+      "steps_by_phase": {
+        "analyze": 7,
+        "finalize": 6,
+        "localize": 301,
+        "patch": 114,
+        "plan": 42
+      },
+      "loop_interventions": 0,
+      "repeated_tool_calls": 2,
+      "rereads": 0,
+      "refused_tool_calls": 0,
+      "forced_transitions": 6,
+      "nudges": 0,
+      "analyze_rounds": 7,
+      "workspace_resets": 6,
+      "finalize_continues": 0
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/structured-20260918-044104-36eb"
+}

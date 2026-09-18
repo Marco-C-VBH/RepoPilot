@@ -11,11 +11,10 @@ deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy
 with every added feature justified by an ablation.
 
 **Status: Phase 0 (evaluation harness) — done; Phase 1 (baseline agent) — done;
-Phase 2a (structured runtime) and 2a.1 (tolerant edits) — done and measured
-against the baseline, results below; 2b (context compaction) — built and
-measured (three runs, the first two each followed by a runtime fix, issues #8
-and #9); the final three-arm Phase 2 experiment is pre-registered and
-pending.** Every number here is measured by a run archived under
+Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
+2b) — done and measured on Haiku with three repeats per arm, results below;
+Sonnet and luna compact runs pending.** Every number here is measured by a
+run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -61,33 +60,54 @@ Two findings, both about what v0 can and cannot measure:
 
 Details in [Phase 1 findings](#phase-1-findings).
 
-### Structured runtime vs. baseline (Phase 2a, spec §12.2)
+### Structured runtime vs. baseline (Phase 2, spec §12.2 and §12.3)
 
-Same 14 tasks, same budget, same models; the runtime owns reproduction,
-verification, termination, phase tool sets and loop detection (details in
-[The structured runtime](#the-structured-runtime-phase-2a)):
+Same 14 tasks, same budget, same models, same tools; the runtime owns
+reproduction, verification, termination, phase tool sets and loop detection
+(details in [The structured runtime](#the-structured-runtime-phase-2a)), and
+its `compact` context rebuilds every prompt from the runtime's working state
+plus the last three tool steps instead of replaying the whole history
+([2b](#phase-2a-findings)):
 
-| model | arm | success | steps | tool calls | test runs | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | repeatable verdicts |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `claude-haiku-4-5` (2 × 14) | baseline | 26 / 28 | 14.4 | 13.9 | 3.2 | 101.6k | $0.111 | 27 s | 13 / 28 | no (2 tasks flip) |
-| | **structured** | **26 / 28** | **10.9** | **8.6** | **2.0** | **56.2k** | **$0.063** | **23 s** | **3 / 28** | **yes** |
-| `gpt-5.6-luna` (1 × 14) | baseline | 14 / 14 | 7.7 | 10.3 | 2.1 | 33.7k | $0.003 | 18 s | 0 | – |
-| | **structured** | **14 / 14** | 8.1 | 9.2 | 2.1 | 39.0k | $0.0045 | 20 s | 0 | – |
-| `claude-sonnet-5` (1 × 14; baseline 3 × 14) | baseline | 42 / 42 | 5.9 | ≈5 | 1.1 | 18.7k | $0.045 | 15 s | 0 | yes |
-| | **structured** | **14 / 14** | 6.9 | 3.9 | 2.0 | 22.4k | $0.053 | 16 s | 0 | – |
+| model | arm | success | steps | tool calls | test runs | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | verified on a green run | invalid calls | repeatable verdicts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-haiku-4-5` | baseline (2 × 14) | 26 / 28 | 14.4 | 13.9 | 3.2 | 101.6k | $0.111 | 27 s | 13 / 28 | – | 0.0% | no (2 tasks flip) |
+| | **structured, full history** (3 × 14) | **40 / 42** | 11.2 | 8.4 | 2.1 | 57.6k | $0.066 | 22 s | 4 / 42 | 90.5% | 0.3% | no (1 task flips) |
+| | **structured, compact context** (3 × 14) | **40 / 42** | **10.9** | 8.5 | 2.2 | **38.4k** | **$0.047** | 24 s | **2 / 42** | **95.2%** | 1.7% | no (2 tasks flip) |
+| `gpt-5.6-luna` (1 × 14) | baseline | 14 / 14 | 7.7 | 10.3 | 2.1 | 33.7k | $0.003 | 18 s | 0 | – | 8.3% | – |
+| | structured, full history | 14 / 14 | 8.1 | 9.2 | 2.1 | 39.0k | $0.0045 | 20 s | 0 | – | – | – |
+| `claude-sonnet-5` (1 × 14; baseline 3 × 14) | baseline | 42 / 42 | 5.9 | ≈5 | 1.1 | 18.7k | $0.045 | 15 s | 0 | – | 1.4% | yes |
+| | structured, full history | 14 / 14 | 6.9 | 3.9 | 2.0 | 22.4k | $0.053 | 16 s | 0 | – | – | – |
 
-Haiku rows: `evals/experiments/baseline-2a1-haiku45-x2/` and
-`structured-2a1-haiku45-x2/`, both arms with the same tools (after 2a.1);
-luna and Sonnet rows: `baseline-v0-*` and `structured-v0-*`. The runtime does
-not raise Haiku's success rate on v0 — the two arms tie at 26 / 28 over two
-runs each — but it changes everything else about how Haiku gets there: half the
-tokens and cost per task, a quarter of the budget terminations, fewer steps,
-tool calls and test runs, and the same verdict on every task across repeats
-(the baseline flips two). The capable models pay for the structure: one extra
-step (PLAN) and +19% (Sonnet) / +55% (luna, on $0.003) cost per task. The
-pre-registered expectation of 14 / 14 for Haiku was not met; what the traces
-say about that is in [Phase 2a findings](#phase-2a-findings), and the
-remaining failure is the one context compaction (2b) is for.
+Haiku rows: `evals/experiments/baseline-2a1-haiku45-x2/`,
+`structured-final-full-haiku45-x3/` and `structured-final-compact-haiku45-x3/`
+— the two structured arms are one experiment on the final code, run back to
+back (2026-09-18, pre-registered in `docs/runtime-design.md` §9); the
+baseline is the earlier 2 × 14 run, its code unchanged since. Luna and Sonnet
+rows: `baseline-v0-*` and `structured-v0-*` (older tool version; their
+compact runs are pending).
+
+What the table says. The runtime does not raise Haiku's success rate on v0 —
+26 / 28 baseline, 40 / 42 in both structured arms, all within one task of
+each other — but it changes how Haiku gets there: about 40% fewer tokens and
+cost per task with the full history (−43% / −41%), a fifth of the budget
+terminations, fewer steps, tool calls and test runs. Compaction then takes
+another third off:
+38.4k tokens and $0.047 per task, a 62% / 58% cut against the baseline, at the
+same success, the same steps and more runs ending on a verified green suite
+(95% vs. 90%), because the runs that used to hit the 100k cap now finish.
+Its costs are visible too: 17 re-reads of code that had left the window in
+42 runs, more interventions (10 forced hypotheses, 4 nudges against 6 and 0),
+and 1.7% invalid calls — Haiku copying the state's "lines 418-450" notation
+into `read_file(start="[418, 450]")`. No arm is deterministic at three
+repeats: `cachetools_003` (a patch that fixes the two failing tests and breaks
+a third; the model then re-reads `__touch` and the test until the cap) passes
+1 of 3 full runs and 2 of 3 compact runs, and one compact run of
+`cachetools_001` went after the wrong method first and ran out of budget
+re-localising. The capable models pay for the structure: one extra step
+(PLAN) and +19% (Sonnet) / +55% (luna, on $0.003) cost per task with the full
+history. The traces behind each number are in
+[Phase 2a findings](#phase-2a-findings).
 
 ## Setup
 
@@ -375,14 +395,16 @@ beforehand in `docs/runtime-design.md`:
   former failures passed on `budget_tokens` with the patch in place — not the
   tool. Conclusion: with the same tools, the arms tie on success (26 / 28 each),
   and the runtime wins on every efficiency and reliability metric.
-- **What remains: one failure, deterministic.** `cachetools_003` fails under the
-  runtime in both runs the same way: the first patch fixes both initially failing
-  tests and breaks `test_missing_getsizeof`; ANALYZE now keeps the patch (the
-  2a.1 framing worked) but goes back to localizing, re-reads 100–150-line slices,
+- **What remains: one task, near the cap.** `cachetools_003` fails under the
+  runtime the same way each time: the first patch fixes both initially failing
+  tests and breaks `test_missing_getsizeof`; ANALYZE keeps the patch (the 2a.1
+  framing worked) but goes back to localizing, re-reads 100–150-line slices,
   and the run hits the 100k-token cap at step 15–16 with the regression still
-  in. The baseline fails the same task in one of two runs. Under either arm the
-  binding constraint is context: the full history is replayed on every step.
-  That is Phase 2b.
+  in. Deterministic over the first two runs, it passed 1 of 3 in the final
+  full-history experiment and 2 of 3 with the compact context: the guard
+  (`key in self.__order`) is found when the model reaches it before the cap.
+  The baseline fails the same task in one of two runs. That the cap is where
+  it fails is what Phase 2b was for.
 
 - **2b — context compaction** (`--context compact`, built; pre-registered in
   `docs/runtime-design.md` §8). Every model call is rebuilt from the runtime's
@@ -407,11 +429,18 @@ beforehand in `docs/runtime-design.md`:
   with the full arm's exact verdict pattern (`cachetools_003` fails both
   repeats, everything else passes both), `agent_loop` 0, tokens median 38.1k
   (−32%), cost $0.046 (−27%), steps 11.2 vs. 10.9, nine re-reads of code that
-  had left the window. `cachetools_003` is the residual in both arms: two
-  passes in six compact runs, none in the full arm's two, and the failing
-  runs end with the model re-reading `__touch` and the test, not at the cap
-  alone. The Phase 2 table comes from one final experiment on this code, all
-  three arms at `--repeat 3` (§9, pre-registered).
+  had left the window. The compact arm was frozen there, and the final
+  experiment (§9: both structured arms on this code, `--repeat 3`, back to
+  back) is the table at the top: 40 / 42 in both arms, 57.6k → 38.4k tokens
+  and $0.066 → $0.047 per task, verified green runs 90.5% → 95.2%, budget
+  terminations 4 → 2, steps 11.2 → 10.9; the price is 17 re-reads in 42 runs,
+  more forced hypotheses and nudges (10 / 4 against 6 / 0), and 1.7% invalid
+  calls where the state's `418-450` range notation came back as
+  `start="[418, 450]"`. Every §9 expectation held except the failing tasks'
+  names: `cachetools_003` passed twice in three compact runs, and
+  `cachetools_001` failed once (a wrong first method, then re-localisation to
+  the cap). Prompt caching, a threshold-triggered hybrid and model-written
+  summaries stay out of scope (§8.3).
 
 ## RepoPilot-Bench v0
 

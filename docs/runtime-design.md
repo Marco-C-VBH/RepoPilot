@@ -480,3 +480,51 @@ run; luna is the live test of the window with OpenAI reasoning items (whole
 steps are kept, so each replayed assistant turn carries its own items — a 400
 there is a bug to log, not a result). If any expectation fails, the table
 shows it.
+
+### 9.1 Results (2026-09-18, `structured-final-full-haiku45-x3`, `structured-final-compact-haiku45-x3`)
+
+Marco ran the two structured arms back to back; the baseline column stays the
+2 × 14 run of 2a.1 (its code has not changed).
+
+| | expected full | full | expected compact | compact |
+|---|---|---|---|---|
+| success | 39 / 42 (`cachetools_003` ×3) | 40 / 42 (`cachetools_003` ×2) ✓ | 39 / 42 (one lucky pass possible) | 40 / 42 (`cachetools_003` ×1, `cachetools_001` ×1) ✓ on the count, ✗ on the names |
+| tokens median | 50–60k | 57.6k ✓ | 35–40k | 38.4k ✓ |
+| cost median | ~$0.06 | $0.066 ✓ | ≤ $0.047 | $0.047 ✓ |
+| `budget_tokens` | ≤ 4 / 42 | 4 ✓ (2 of them PASS on the cap) | ≤ 4 / 42 | 2 ✓ |
+| `agent_loop` | 0 | 0 ✓ | 0 | 0 ✓ |
+| steps | ~11 | 11.2 ✓ | ~11 | 10.9 ✓ |
+| verified on a green run | — | 90.5% | — | 95.2% |
+| repeated calls (re-reads) | — | 2 (0) | — | 17 (17) |
+| forced / nudges / resets / ANALYZE | — | 6 / 0 / 6 / 7 | — | 10 / 4 / 5 / 10 |
+| invalid calls | — | 0.3% (1) | — | 1.7% (6) |
+| steps by phase (localize / patch) | — | 301 / 114 | — | 253 / 145 |
+| total cost | ~$2.7 | $2.76 | ~$2.2 | $2.14 |
+
+Reading, for the README table: the two arms tie at 40 / 42; the compact arm
+spends a third fewer tokens (−33%) and 29% less per task, ends more runs on a
+verified green suite (the full arm hit the cap four times, twice with the
+right patch already in), and takes the same number of steps. Its costs:
+17 re-reads in 42 runs (every repeated call in the arm is one), four nudges
+and ten forced hypotheses against none and six, and six invalid `read_file`
+calls in which Haiku copied the state's `418-450` range notation into
+`start="[418, 450]"` (one such call in the full arm, garbled differently) —
+a prompt-format cost that the tool's error message repairs on the next step,
+logged, not fixed. Neither arm is deterministic at three repeats.
+`cachetools_003` passed 1 of 3 full runs (16 steps, at the cap) and 2 of 3
+compact (23 and 14 steps, verified); across everything run since 2a.1 that is
+1 of 5 full and 4 of 9 compact — suggestive that the smaller prompts leave
+room to reach the guard, not a claim at this sample. The compact arm's other
+failure, `cachetools_001`, went after `__contains__` / `__iter__` before
+`expire`, kept the wrong patch, re-localised with 80–150-line reads and hit
+the cap: the same "first hypothesis, then no room to recover" shape as
+`cachetools_003`, on a task the arm had passed in its previous eight runs.
+
+Against the baseline (2 × 14, 26 / 28, 101.6k, $0.111, 13 budget
+terminations): the runtime with the full history cuts tokens and cost by
+about 40% and budget terminations to a fifth at the same success; with
+compaction the cuts are 62% and 58%. Phase 2's claim is therefore about
+efficiency and reliability, not success rate: on v0 the success rate is set by
+the model's first hypothesis on two cachetools tasks, and no arm moves it.
+
+Still to run: Sonnet and luna once each with `--context compact`.
