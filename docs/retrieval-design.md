@@ -164,3 +164,66 @@ failing test (spec §8). Retrieval-based working memory (§12.3's third arm).
 Tree-sitter. pgvector (the index is per task and lives in memory plus a
 file cache; a database is Phase 5). Bench v1, where retrieval decides tasks —
 the benchmark-extension stage.
+
+## 7. Offline results (2026-09-18, `retrieval-v0`)
+
+`scripts/retrieval_eval.py`, `LocalEmbedder`, k = 10, the 14 reports verbatim;
+6,467 chunks over the 14 workspaces (413 per cachetools task, 522 tenacity,
+448 toolz).
+
+| configuration | R@5 file | R@10 file | MRR file | R@5 symbol | R@10 symbol | MRR symbol | query p50 | vs. §5 |
+|---|---|---|---|---|---|---|---|---|
+| BM25 | 0.93 | 0.93 | 0.86 | 0.79 | 0.93 | 0.54 | 1.7 ms | file ✓ (≥ 0.90); symbol above the 0.70–0.85 range |
+| dense (bge-small) | 0.93 | **1.00** | 0.87 | **0.93** | **1.00** | 0.81 | 35.6 ms | far above 0.60–0.80 / 0.45–0.65: the best single channel |
+| symbol | 0.86 | 0.93 | 0.65 | 0.71 | 0.93 | 0.48 | 0.5 ms | file ✓ (≥ 0.85); the weakest ranker (MRR) |
+| BM25 + dense | 0.93 | 0.93 | 0.86 | 0.93 | 0.93 | 0.80 | 39.0 ms | ≥ BM25 ✓; < dense ✗ |
+| all three | 0.93 | 0.93 | **0.93** | 0.93 | 0.93 | **0.89** | 42.6 ms | ≥ BM25 + dense ✓ on MRR; R@10 unchanged |
+
+Latency held (every channel under 50 ms; the dense channel's 36 ms is the
+query embedding). Index build did not: 56 s, 86 s and 100 s for the first
+task of each repository — bge-small embeds these ~400-token chunks at about
+6 per second on the laptop CPU, not the 30 s budgeted — and 0.14–0.38 s for
+every later task of the same repository, because the cache is keyed by chunk
+text and a task's bug changes one chunk (1,397 chunks embedded for 6,467
+indexed). The agent runs inherit that cache.
+
+Three things the table says.
+
+*The dense channel was under-predicted.* It is the only configuration with
+perfect recall at 10, at file and symbol level, and its MRR ties BM25. The
+reports mix prose with identifiers; a small embedding model reads both, and
+the crowding-out of functions by short module chunks feared in issue #10 did
+not happen on real files (3 of the 137 dense top-10 slots are module chunks;
+BM25 has 4).
+
+*Fusion sharpens agreement and buries dissent.* All three channels fused
+give the best first hit (MRR 0.93 / 0.89: the gold is rank 1 for 13 of 14
+tasks at file level) but no better recall than BM25, because of one task.
+`cachetools_005` reports that `@cached(...)` never stores anything; the gold
+is `_wrapper` in the private module `src/cachetools/_cached.py`, and the
+report names only the public surface (`cached`, `LRUCache`, `square.cache`).
+BM25 and the symbol channel rank `lru_cache`, `_HashedTuple`, `LRUCache` and
+the public `cached` function — the entry point, one hop from the bug — and
+never the gold file. Dense alone finds it (`_locked` at rank 6, `_wrapper` at
+rank 10). Reciprocal rank fusion sums `1 / (60 + rank)`, so a chunk two
+channels place at rank 2 scores 2 / 62 and a chunk one channel places at
+rank 6 scores 1 / 66: the channels' shared, wrong picture outvotes the one
+right signal, and the fused top 10 has no gold at all. "Fusion ≥ BM25" held;
+"fusion ≥ the best channel" did not, and §5 did not claim it. This is the
+one v0 task shaped like the Bench v1 tasks (symptom in one module, cause in
+another), and it is where retrieval quality actually differs by configuration.
+
+*The symbol channel is a poor ranker on its own and a good tie-breaker.* Its
+MRR is the lowest (0.65 file), because plain words in a report match many
+definitions; added to BM25 + dense it lifts MRR from 0.86 to 0.93 — when the
+report names the symbol, that vote breaks ties in the right direction.
+
+Decisions from this. The agent runs go ahead as pre-registered, with all
+three channels fused (the evidence for `cachetools_005` will show the public
+`cached` function at rank 3 — the right place to start reading, even without
+the gold). Nothing is tuned on the one miss: a reranker, a fusion that keeps
+each channel's top hit, or a dense-weighted fusion are the §12.1 "+ reranker"
+row's territory and need Bench v1's sample to be judged. The pre-registration
+for v1 can now be sharper: dense recall will be the ceiling, BM25 and symbol
+recall will fall with identifier-free reports, and fusion will lose to dense
+alone on cross-module tasks unless it stops requiring agreement.

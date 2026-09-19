@@ -1,0 +1,265 @@
+{
+  "kind": "retrieval",
+  "configs": {
+    "bm25": {
+      "recall5_file": 0.9286,
+      "recall10_file": 0.9286,
+      "mrr_file": 0.8571,
+      "recall5_symbol": 0.7857,
+      "recall10_symbol": 0.9286,
+      "mrr_symbol": 0.5446,
+      "query_ms": 2.3207,
+      "query_ms_p50": 1.73,
+      "tasks": 14,
+      "misses_file": [
+        "cachetools_005"
+      ],
+      "misses_symbol": [
+        "cachetools_005"
+      ]
+    },
+    "dense": {
+      "recall5_file": 0.9286,
+      "recall10_file": 1.0,
+      "mrr_file": 0.869,
+      "recall5_symbol": 0.9286,
+      "recall10_symbol": 1.0,
+      "mrr_symbol": 0.8071,
+      "query_ms": 35.4157,
+      "query_ms_p50": 35.61,
+      "tasks": 14,
+      "misses_file": [],
+      "misses_symbol": []
+    },
+    "symbol": {
+      "recall5_file": 0.8571,
+      "recall10_file": 0.9286,
+      "mrr_file": 0.6471,
+      "recall5_symbol": 0.7143,
+      "recall10_symbol": 0.9286,
+      "mrr_symbol": 0.4848,
+      "query_ms": 0.5836,
+      "query_ms_p50": 0.52,
+      "tasks": 14,
+      "misses_file": [
+        "cachetools_005"
+      ],
+      "misses_symbol": [
+        "cachetools_005"
+      ]
+    },
+    "bm25+dense": {
+      "recall5_file": 0.9286,
+      "recall10_file": 0.9286,
+      "mrr_file": 0.8571,
+      "recall5_symbol": 0.9286,
+      "recall10_symbol": 0.9286,
+      "mrr_symbol": 0.7976,
+      "query_ms": 39.1757,
+      "query_ms_p50": 38.97,
+      "tasks": 14,
+      "misses_file": [
+        "cachetools_005"
+      ],
+      "misses_symbol": [
+        "cachetools_005"
+      ]
+    },
+    "bm25+dense+symbol": {
+      "recall5_file": 0.9286,
+      "recall10_file": 0.9286,
+      "mrr_file": 0.9286,
+      "recall5_symbol": 0.9286,
+      "recall10_symbol": 0.9286,
+      "mrr_symbol": 0.8929,
+      "query_ms": 41.2871,
+      "query_ms_p50": 42.56,
+      "tasks": 14,
+      "misses_file": [
+        "cachetools_005"
+      ],
+      "misses_symbol": [
+        "cachetools_005"
+      ]
+    }
+  },
+  "embedder": "BAAI--bge-small-en-v1.5",
+  "k": 10,
+  "tasks": 14,
+  "started_at": "2026-09-18T10:15:19+00:00",
+  "duration_seconds": 249.8,
+  "indexes": {
+    "cachetools_001": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 55.562,
+      "embedded": 413,
+      "searches": 5
+    },
+    "cachetools_002": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.205,
+      "embedded": 2,
+      "searches": 5
+    },
+    "cachetools_003": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.139,
+      "embedded": 1,
+      "searches": 5
+    },
+    "cachetools_004": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.161,
+      "embedded": 1,
+      "searches": 5
+    },
+    "cachetools_005": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.186,
+      "embedded": 1,
+      "searches": 5
+    },
+    "tenacity_001": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 86.157,
+      "embedded": 522,
+      "searches": 5
+    },
+    "tenacity_002": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.331,
+      "embedded": 2,
+      "searches": 5
+    },
+    "tenacity_003": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.237,
+      "embedded": 1,
+      "searches": 5
+    },
+    "tenacity_004": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.249,
+      "embedded": 1,
+      "searches": 5
+    },
+    "tenacity_005": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.236,
+      "embedded": 1,
+      "searches": 5
+    },
+    "toolz_001": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 99.688,
+      "embedded": 448,
+      "searches": 5
+    },
+    "toolz_002": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.377,
+      "embedded": 2,
+      "searches": 5
+    },
+    "toolz_003": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.331,
+      "embedded": 1,
+      "searches": 5
+    },
+    "toolz_004": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.367,
+      "embedded": 1,
+      "searches": 5
+    }
+  },
+  "index_build_seconds_total": 244.23,
+  "chunks_total": 6467,
+  "embedded_total": 1397,
+  "archived_from": "results/retrieval-20260918-061519-8ce1"
+}

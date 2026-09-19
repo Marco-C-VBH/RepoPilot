@@ -14,9 +14,9 @@ with every added feature justified by an ablation.
 Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
 2b) — done and measured: Haiku with three repeats per arm, Sonnet and luna
 once per arm, results below; Phase 3 (retrieval: ast chunks, BM25 + local
-embeddings + symbols, RRF) — built, pre-registered in
-`docs/retrieval-design.md`, runs pending.** Every number here is measured by a
-run archived under
+embeddings + symbols, RRF) — built, offline retrieval quality measured
+(below), agent-level runs pending.** Every number here is measured by a run
+archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -495,11 +495,33 @@ Every retrieval is in the trace with each chunk's rank in each channel.
 What v0 can measure about it is written down first, in
 `docs/retrieval-design.md`: the leak audit showed localization is free on v0,
 so the prediction is that success does not move; what should move is the
-cost of localization (LOCALIZE was 253 of Haiku's 456 compact steps), and
-retrieval *quality* is measured offline — the report as the query, the task's
-gold files and symbols as the relevant set, Recall@5 / 10 and MRR per channel
-and per fusion (`scripts/retrieval_eval.py`, no model, seconds). Numbers go
-here once the runs are archived.
+cost of localization (LOCALIZE was 253 of Haiku's 456 compact steps). Retrieval
+*quality* is measured offline — the report as the query, the task's gold
+files and symbols as the relevant set (`scripts/retrieval_eval.py`, no model):
+
+| configuration | Recall@5 file | Recall@10 file | MRR file | Recall@10 symbol | MRR symbol | query (p50) |
+| --- | --- | --- | --- | --- | --- | --- |
+| BM25 | 0.93 | 0.93 | 0.86 | 0.93 | 0.54 | 1.7 ms |
+| dense (bge-small) | 0.93 | **1.00** | 0.87 | **1.00** | 0.81 | 36 ms |
+| symbol | 0.86 | 0.93 | 0.65 | 0.93 | 0.48 | 0.5 ms |
+| BM25 + dense | 0.93 | 0.93 | 0.86 | 0.93 | 0.80 | 39 ms |
+| BM25 + dense + symbol | 0.93 | 0.93 | **0.93** | 0.93 | **0.89** | 43 ms |
+
+`evals/experiments/retrieval-v0/` (2026-09-18, 14 tasks, 6,467 chunks; the
+first index of each repository takes 56–100 s to embed on a laptop CPU, every
+later task of the same repository 0.2–0.4 s from the cache). Two things the
+pre-registration got wrong, in opposite directions: the small embedding model
+is the best single channel, not the weakest (predicted 0.60–0.80 recall,
+measured 1.00), and fusion does not dominate its inputs. On `cachetools_005` —
+the one v0 task whose report names only the public surface (`@cached(...)`)
+while the bug sits in the private module it delegates to — only the dense
+channel reaches the gold (ranks 6 and 10), and reciprocal rank fusion, which
+rewards agreement between channels, lets the lexical and symbol channels'
+shared wrong picture outvote it: fused Recall@10 stays at BM25's 0.93 while
+fused MRR is the best of any configuration (the gold is rank 1 for 13 of 14
+tasks). That task is the shape Bench v1 will have more of, and where the
+retrieval configurations will separate. The agent-level runs (`tool`,
+`evidence`) are pending; their numbers go here.
 
 ## RepoPilot-Bench v0
 
