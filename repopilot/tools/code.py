@@ -295,9 +295,9 @@ def edit_file(workspace: Workspace, path: str, old_string: str, new_string: str)
     a weaker model copying from the numbered ``read_file`` listing miscounts
     indentation on continuation lines and would otherwise burn its steps on
     "not found".  A tolerant match must be unique; the replacement is then
-    re-indented to the file (lines the model kept verbatim take their original
-    indentation, new lines follow the first line's offset), and the result says
-    so, so the trace records every use of the fallback.
+    re-indented to the file (lines the model kept take their file indentation,
+    changed lines follow the nearest kept line above them -- see ``_reindent``),
+    and the result says so, so the trace records every use of the fallback.
 
     Tests are read-only: the benchmark judges a fix with its own tests, so
     editing the suite can only hide the bug, never fix it.
@@ -450,41 +450,77 @@ def _leading_ws(line: str) -> str:
 def _reindent(new: str, located: _Located) -> str:
     """``new`` re-indented to the file after a whitespace-tolerant match.
 
-    A line the model kept from the old block (same content once stripped)
-    takes that line's indentation from the file.  When the new block has as
-    many lines as the old one, a line indented like the old line in the same
-    position takes that position's file indentation (the model changed the
-    text, not the alignment).  Any other line is shifted by the difference
-    between the file's and the model's first-line indentation.
+    The model's whitespace is known to be off (the exact match failed), so the
+    file's is the reference:
+
+    * a line the model kept from the old block (same content once stripped)
+      takes that line's indentation from the file -- unless the model moved it
+      relative to the kept line above it (a statement pulled under a new
+      ``if``), in which case the move is applied to the file's indentation;
+      a line that changed text but sits in the same position with the same
+      indentation as the old line there (the block kept its number of lines)
+      counts as kept too;
+    * a changed or inserted line is placed relative to the nearest such
+      *anchor* line above it, by the offset the model gave it in ``new``
+      relative to that anchor -- not by the first line's offset, which is
+      often the one line the model got right while the rest of its block was
+      off by one (issue #11);
+    * when every line is kept, the model changed nothing but whitespace: that
+      is a deliberate re-indentation, written as given and aligned to the
+      file's first line, so mis-indented code can be fixed at all.
     """
     new_lines = new.split("\n")
     if located.trailing_newline and len(new_lines) > 1 and new_lines[-1] == "":
         new_lines = new_lines[:-1]
-    original = {}
-    for old_line, file_line in zip(located.old_lines, located.file_lines, strict=True):
-        original.setdefault(old_line.strip(), _leading_ws(file_line))
+    old_indent = [_leading_ws(line) for line in located.old_lines]
+    file_indent = [_leading_ws(line) for line in located.file_lines]
+    old_stripped = [line.strip() for line in located.old_lines]
+    new_stripped = [line.strip() for line in new_lines]
+
+    if new_stripped == old_stripped:  # a pure re-indentation, on purpose
+        shift = len(file_indent[0]) - len(_leading_ws(new_lines[0]))
+        return "\n".join(
+            _shift_indent(_leading_ws(line), shift) + line.strip() if line.strip() else ""
+            for line in new_lines
+        )
+
+    original: dict[str, tuple[str, str]] = {}  # content -> (old indentation, file indentation)
+    for content, old, indent in zip(old_stripped, old_indent, file_indent, strict=True):
+        original.setdefault(content, (old, indent))
     same_shape = len(new_lines) == len(located.old_lines)
-    model_base = _leading_ws(located.old_lines[0])
-    file_base = _leading_ws(located.file_lines[0])
+    # The last anchored line: its indentation in the old block, in ``new`` and in the file.
+    anchor: tuple[str, str, str] | None = None
     out = []
     for position, line in enumerate(new_lines):
         content = line.strip()
+        current = _leading_ws(line)
         if not content:
             out.append("")
-        elif content in original:
-            out.append(original[content] + content)
-        elif same_shape and _leading_ws(line) == _leading_ws(located.old_lines[position]):
-            out.append(_leading_ws(located.file_lines[position]) + content)
-        elif line.startswith(model_base):
-            out.append(file_base + line[len(model_base) :])
+            continue
+        if content in original:
+            old, indent = original[content]
+        elif same_shape and current == old_indent[position]:
+            old, indent = old_indent[position], file_indent[position]
         else:
-            shift = len(file_base) - len(model_base)
-            current = _leading_ws(line)
-            if shift >= 0:
-                out.append(current + " " * shift + content)
+            old = None
+            if anchor is not None:
+                indent = _shift_indent(current, len(anchor[2]) - len(anchor[1]))
             else:
-                out.append(current[: max(len(current) + shift, 0)] + content)
+                indent = _shift_indent(current, len(file_indent[0]) - len(old_indent[0]))
+        if old is not None and anchor is not None:
+            moved = (len(current) - len(anchor[1])) - (len(old) - len(anchor[0]))
+            if moved:  # the model changed this line's depth relative to the line above
+                indent = _shift_indent(anchor[2], len(current) - len(anchor[1]))
+        out.append(indent + content)
+        if old is not None:
+            anchor = (old, current, indent)
     return "\n".join(out)
+
+
+def _shift_indent(indent: str, shift: int) -> str:
+    if shift >= 0:
+        return indent + " " * shift
+    return indent[: max(len(indent) + shift, 0)]
 
 
 # ----------------------------------------------------------------------------- helpers

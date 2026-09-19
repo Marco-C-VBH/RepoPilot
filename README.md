@@ -14,9 +14,10 @@ with every added feature justified by an ablation.
 Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
 2b) — done and measured: Haiku with three repeats per arm, Sonnet and luna
 once per arm, results below; Phase 3 (retrieval: ast chunks, BM25 + local
-embeddings + symbols, RRF) — built, offline retrieval quality measured
-(below), agent-level runs pending.** Every number here is measured by a run
-archived under
+embeddings + symbols, RRF) — built and measured offline and on the agent
+(below); two runtime fixes the agent runs demanded (issues #11, #12) are in,
+and the re-run (Phase 3.1) is pending.** Every number here is measured by a
+run archived under
 `evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
@@ -520,8 +521,33 @@ rewards agreement between channels, lets the lexical and symbol channels'
 shared wrong picture outvote it: fused Recall@10 stays at BM25's 0.93 while
 fused MRR is the best of any configuration (the gold is rank 1 for 13 of 14
 tasks). That task is the shape Bench v1 will have more of, and where the
-retrieval configurations will separate. The agent-level runs (`tool`,
-`evidence`) are pending; their numbers go here.
+retrieval configurations will separate.
+
+Agent level (Haiku, compact context, 2 × 14 per arm, `evals/experiments/structured-p3-{tool,evidence}-haiku45-x2`,
+against the Phase 2 compact control):
+
+| arm | success | steps | LOCALIZE steps / run | PATCH steps / run | tool calls | tokens / task (median) | cost / task | `retrieve` calls | forced hypotheses / run |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `none` (Phase 2 final, 3 × 14) | 40 / 42 | 10.9 | 6.0 | 3.5 | 8.5 | 38.4k | $0.047 | – | 0.24 |
+| `tool` | 27 / 28 | 11.3 | 7.0 | 3.0 | 8.6 | 41.3k | $0.050 | **0** | 0.29 |
+| `evidence` | 27 / 28 | 10.5 | **5.2** | 4.0 | **7.1** | 41.2k | $0.050 | **0** | **0.14** |
+
+Two results, neither the one pre-registered. Haiku never called `retrieve`
+— not once in 56 runs with the tool in every LOCALIZE and PATCH prompt — so
+a retrieval tool the model *may* use is no retrieval for this model, and the
+`tool` arm is a re-run of the control (same 27 / 28, `cachetools_003`). The
+evidence the runtime pushed at PLAN (the gold file at rank 1 in 26 of 28
+runs) did shorten localization — LOCALIZE steps −26%, `search_symbol` calls
+39 → 6, forced hypotheses halved, several runs hypothesising at their first
+turn with no tool call — and the runtime gave the saving back: the compact
+state dropped the evidence at PATCH, `edit_file` needs the exact text, and 28
+of the arm's 33 PATCH-phase reads re-read what the evidence had shown
+(issue #12). Tokens per task ended flat. The same runs exposed a bug in the
+2a.1 whitespace-tolerant edit (inserted lines re-indented by the wrong
+offset, and a model correcting the indentation overruled by the file — issue
+#11; one `toolz_003` run spent 12 steps and hit the cap with the right patch
+already in place). Both are fixed; the re-run is pre-registered in
+`docs/retrieval-design.md` §9 and its numbers go here.
 
 ## RepoPilot-Bench v0
 

@@ -124,6 +124,11 @@ with the exact reason the bug cannot be fixed from the files you have seen.
 
 EMPTY_REPLY_NUDGE = "Your reply was empty. Reply as instructed for the current phase."
 
+EDITS_SPENT_NOTICE = (
+    "The edits allowed in this PATCH visit are used up; the runtime is running the full test "
+    "suite on your change now."
+)
+
 
 def loop_notice(name: str) -> str:
     return (

@@ -8,10 +8,10 @@
     system     the runtime prompt + how to read the working state
     user       WORKING STATE: task, initial failures, plan, hypotheses,
                diagnoses, what the runtime did (reverts, continues; dated by
-               step), files read (ranges only), searches made, current patch
-               (and whether it was tested), latest test run (and on which
-               patch), budget left  -- rendered from ``AgentState``, no model
-               summary
+               step), retrieved evidence while no patch is in place (Phase 3),
+               files read (ranges only), searches made, current patch (and
+               whether it was tested), latest test run (and on which patch),
+               budget left  -- rendered from ``AgentState``, no model summary
     ...        the last ``window_steps`` tool steps, whole (assistant message
                with its tool calls, the tool results, any runtime nudge)
     user       the current phase's instructions
@@ -30,7 +30,7 @@ from typing import Any
 
 from repopilot.agent.budget import BudgetTracker
 from repopilot.agent.prompts import EVIDENCE_HEADER, TaskInput
-from repopilot.agent.state import AgentState, Phase, TestSummary
+from repopilot.agent.state import AgentState, TestSummary
 from repopilot.models.types import Message, system, user
 from repopilot.tracing.events import clip
 
@@ -188,9 +188,11 @@ def render_state(
         parts.append(
             "What the runtime did, by step:\n" + "\n".join(f"- {clip(n, 300)}" for n in state.notes)
         )
-    # Retrieved evidence is for finding the bug; once the model is patching it
-    # has read what it needs and the block would only cost tokens every step.
-    if state.evidence and state.phase in (Phase.PLAN, Phase.LOCALIZE):
+    # Retrieved evidence is for finding the bug and writing the first edit; once a
+    # patch is in place the model has the exact text in its window and the diff in
+    # the state, and the block would only cost tokens every step (issue #12 -- it
+    # used to leave at PATCH, and the model re-read what it had just been shown).
+    if state.evidence and not diff.strip():
         parts.append(f"{EVIDENCE_HEADER}\n{state.evidence}")
 
     if state.reads:

@@ -379,23 +379,63 @@ def test_localize_tool_limit_forces_the_hypothesis(tmp_path: Path) -> None:
     assert forced and forced[0].data["calls"] == 2
 
 
-def test_patch_edit_limit_refuses_further_edits_until_tested(tmp_path: Path) -> None:
+def test_patch_edit_limit_refuses_further_edits_and_the_runtime_tests(tmp_path: Path) -> None:
+    """Once a PATCH visit's edits are spent and the tree changed, the runtime runs
+    the tests itself rather than wait for a turn the model may never end (issue
+    #11's trace: eight steps of refused edits up to the token cap)."""
     toolbox = make_toolbox(tmp_path)
-    runner, _ = agent(
+    runner, client = agent(
         toolbox,
         [
             response(PLAN),
             response(HYPOTHESIS),
             response("", (EDIT, EDIT_AGAIN)),  # second edit exceeds the cap of 1
-            response("done"),
+            response("never reached: the runtime tested after the edit"),
         ],
         limits=RuntimeLimits(patch_edits=1),
     )
     run = runner.run(TASK)
-    assert run.termination is Termination.DONE
+    assert run.termination is Termination.DONE and run.steps == 3
     policies = [e.data["policy"] for e in run.trace.events if e.kind == "tool_call"]
     assert policies == ["executed", "edit_limit"]
     assert "DEFAULT_SIZE = 4" not in run.patch and run.runtime["refused_tool_calls"] == 1
+    assert run.runtime["forced_transitions"] == 1 and run.runtime["verified"] is True
+    assert [e.data["name"] for e in run.trace.events if e.kind == "intervention"] == ["edits_spent"]
+    assert run.runtime["notes"] == [
+        "step 3: the 1 edits of this PATCH visit were used, so the runtime ran the tests."
+    ]
+    assert len(client.calls) == 3  # the fourth scripted reply was never requested
+
+    # Spending the cap on an edit and its own undo leaves the tree as it was last
+    # tested: nothing to run, so the model must end its turn as before.
+    toolbox = make_toolbox(tmp_path / "again", FAILING, FAILING, PASSING)
+    undo = ToolCall(
+        "u1",
+        "edit_file",
+        {
+            "path": "demo/cache.py",
+            "old_string": "DEFAULT_SIZE = 4",
+            "new_string": "DEFAULT_SIZE = 3",
+        },
+    )
+    runner, _ = agent(
+        toolbox,
+        [
+            response(PLAN),
+            response(HYPOTHESIS),
+            response("", (EDIT,)),
+            response("first try"),  # -> TEST (fails)
+            response(json.dumps({"diagnosis": "x", "next": "patch", "keep_patch": True})),
+            response("", (EDIT_AGAIN, undo)),  # the cap of 2, but the diff is the tested one
+            response("nothing new"),  # -> nudged
+            response("still nothing"),  # -> no_progress
+        ],
+        limits=RuntimeLimits(patch_edits=2),
+    )
+    run = runner.run(TASK)
+    assert run.termination is Termination.NO_PROGRESS
+    assert run.runtime["forced_transitions"] == 0 and run.runtime["nudges"] == 1
+    assert run.test_runs == 2 and "DEFAULT_SIZE = 4" not in run.patch
 
 
 def test_empty_reply_is_nudged_once(tmp_path: Path) -> None:

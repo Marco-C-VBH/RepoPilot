@@ -227,3 +227,112 @@ row's territory and need Bench v1's sample to be judged. The pre-registration
 for v1 can now be sharper: dense recall will be the ceiling, BM25 and symbol
 recall will fall with identifier-free reports, and fusion will lose to dense
 alone on cross-module tasks unless it stops requiring agreement.
+
+## 8. Agent-level results (2026-09-19, `structured-p3-tool-haiku45-x2`, `structured-p3-evidence-haiku45-x2`)
+
+Haiku, compact context, 2 × 14 per arm, same budget as Phase 2; the control
+is the Phase 2 final compact experiment (3 × 14). Per-run figures for the
+phase counts, since the arms differ in size.
+
+| | `none` (Phase 2 final) | `tool` | expected | `evidence` | expected |
+|---|---|---|---|---|---|
+| success | 40 / 42 | 27 / 28 | 26–27 / 28 ✓ | 27 / 28 | 26–27 / 28 ✓ |
+| steps per task | 10.9 | 11.3 | — | 10.5 | — |
+| LOCALIZE steps per run | 6.0 | 7.0 | 5–6 ✗ | 5.2 | ≤ 4 ✗ |
+| PATCH steps per run | 3.5 | 3.0 | — | 4.0 | — |
+| LOCALIZE tool calls per run | — | 6.8 | — | 4.3 | — |
+| tool calls per task | 8.5 | 8.6 | ≤ 8.5 ≈ | 7.1 | ≤ 6.5 ✗, close |
+| tokens per task (median) | 38.4k | 41.3k | ≤ 40k ✗ | 41.2k | ≤ 38k ✗ |
+| cost per task (median) | $0.047 | $0.050 | — | $0.050 | — |
+| `retrieve` calls | — | **0** in 28 runs | reported | **0** in 28 runs | reported |
+| forced hypotheses per run | 0.24 | 0.29 | ≤ 0.24 ✗ | 0.14 | ≤ 0.12 ≈ |
+| `budget_tokens` | 2 / 42 | 1 / 28 | — | 2 / 28 (one a PASS on the cap) | — |
+| verified on a green run | 95.2% | 96.4% | — | 92.9% | — |
+| invalid calls | 1.7% | 0.4% | — | 0.0% | — |
+| edits (failed / whitespace-matched) | — | 32 (0 / 3) | — | 43 (1 / 6) | — |
+| edit-cap refusals | — | 0 | — | 5 | — |
+
+What the traces say, in order of weight.
+
+*Haiku never called `retrieve`.* Zero calls in 56 runs, with the tool
+defined in every LOCALIZE and PATCH prompt and described as the way to search
+by description. Given `search_symbol` and `search_code`, which it has used
+since Phase 1, the model does not reach for a third search tool it was not
+told to prefer. The `tool` arm is therefore the compact control re-run with
+one more tool definition in the prompt: 27 / 28 (the Phase 2 pattern: one
+`cachetools_003` failure), 11.3 steps, 41.3k tokens against 38.1–38.8k in the
+three earlier compact runs — within Haiku's run-to-run spread, plus ~150
+tokens of schema per call. A retrieval tool the model may call is, for this
+model, no retrieval at all; whatever retrieval does for the agent has to be
+done by the runtime.
+
+*Evidence at PLAN did what it was for, and the runtime took the saving
+back.* The evidence block held the gold file at rank 1 in 26 of 28 runs (the
+two misses are `cachetools_005`, §7); with it, LOCALIZE fell from 7.0 to 5.2
+steps per run, LOCALIZE tool calls from 6.8 to 4.3, `search_symbol` calls
+from 39 to 6 over the arm, forced hypotheses halved, and in several runs the
+model stated its hypothesis at its first LOCALIZE turn with no tool call at
+all ("I can see the bug clearly from the code provided"). PATCH then grew from
+3.0 to 4.0 steps per run: 28 of the arm's 33 PATCH-phase `read_file` calls
+re-read a range the evidence had shown, because the compact state dropped the
+block at PATCH, exactly when `edit_file` needed the exact text (issue #12).
+Tokens per task ended flat (41.2k against 41.3k): the block costs ~800 tokens
+per PLAN and LOCALIZE call (PLAN prompts 2.3k → 3.6k, LOCALIZE 4.0k → 4.8k)
+and the re-reads cost about what the shorter LOCALIZE saved. The design's
+prediction was a lower token count *because* of fewer steps; the steps fell
+where predicted and reappeared where the design had not looked.
+
+*One run exposed a Phase 2a.1 bug.* `toolz_003` run 1 in the evidence arm
+had the correct fix in the tree at step 13 and hit the token cap at step 25
+(PASS on the cap, $0.123): every whitespace-tolerant edit re-indented the
+inserted lines by the first line's offset, leaving `if key in d2:` at 13
+spaces; the model saw it, tried to fix the indentation three times, and the
+tool wrote the file's wrong indentation back each time; then five edits were
+refused at the PATCH visit's cap while the model kept reading and retrying
+instead of ending its turn (issue #11). All 13 whitespace-matched edits in
+the last four runs left a mis-indented block; only this one turned into a
+loop. Not a retrieval effect — the evidence arm merely produced the run that
+made it visible.
+
+*Per task.* Evidence helped most where localization had been expensive:
+`cachetools_001` 12 / 14 steps → 8 / 7, `cachetools_005` 14 / 17 → 7 / 10
+(the report's public entry point `cached` at evidence rank 3 was enough,
+without the gold), `cachetools_003` 23 → 13 in the passing run, `toolz_001`
+8 / 19 → 6 / 14. It cost steps on tenacity, whose reports already name the
+function and whose LOCALIZE was short: `tenacity_001` 9 / 8 → 15 / 7 (a run
+that read the file whole twice and hit the 10-call LOCALIZE cap despite the
+evidence), `tenacity_004` 14 / 14 → 17 / 16. Success did not move (27 / 28
+both, `cachetools_003.1` the failure in both) — §1's prediction.
+
+## 9. Phase 3.1 (written before running): the same experiment with three fixes
+
+Changes since §8, all in the runtime and tools, none in retrieval:
+
+1. `_reindent` places inserted lines relative to the nearest kept line and
+   honours a pure re-indentation (issue #11) — a shared tool, so the control
+   moves too.
+2. Once a PATCH visit's edits are spent and the tree changed, the runtime runs
+   the tests instead of waiting for the model to end its turn (issue #11).
+3. The evidence stays in the compact state while no patch is in place —
+   PLAN, LOCALIZE and PATCH up to the first edit (issue #12).
+
+Runs: `--retrieval none` × 2 (the control, re-run because of 1 and 2) and
+`--retrieval evidence` × 2, Haiku, compact; archived as
+`structured-p31-none-haiku45-x2` and `structured-p31-evidence-haiku45-x2`.
+The `tool` arm is not re-run: 0 calls in 28 runs is the result.
+
+| | expected `none` | expected `evidence` |
+|---|---|---|
+| success | 26–27 / 28 | 26–27 / 28, same failing task |
+| LOCALIZE steps per run | 6–7 | ≤ 5.2 (as in §8) |
+| PATCH steps per run | 3–3.5 | ≤ 3.5 (the re-reads gone: PATCH reads overlapping the evidence < 5 in 28 runs) |
+| tool calls per task | 8–9 | ≤ 6.5 |
+| tokens per task (median) | 37–41k | below `none` by ≥ 2k |
+| whitespace-matched edits leaving a mis-indented block | 0 of N | 0 of N |
+| edit-cap forced test runs | reported | reported |
+| `budget_tokens` | ≤ 2 / 28 | ≤ 1 / 28 |
+
+If `evidence` still does not beat `none` on tokens with the re-reads gone,
+the evidence block's ~800 tokens per call cost more than the localization it
+saves on v0, and the honest conclusion is that runtime-injected evidence is a
+step saver, not a token saver, on a benchmark where localization is free.

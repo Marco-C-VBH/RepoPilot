@@ -78,7 +78,10 @@ Differences from the spec's diagram, and why:
   tallied as `rereads`.
 - *Phase limits.* LOCALIZE: 10 tool calls per visit, then the runtime asks for
   the hypothesis with no tools offered (`forced_transitions`). PATCH: 4 edits per
-  visit, then edits are refused until the tests run.
+  visit; once they are spent and the tree differs from the last tested one, the
+  runtime runs the tests itself instead of waiting for the model to end its
+  turn (`forced_transitions`, since issue #11 — before that, further edits
+  were refused until the model ended the turn, which Haiku did not always do).
 - *Recoverable vs terminal.* Recoverable, each with one nudge: an empty reply,
   a PATCH turn without a new edit, an unparsable JSON decision (defaults are
   used). Terminal: any budget, `agent_loop`, `no_progress` (a second turn

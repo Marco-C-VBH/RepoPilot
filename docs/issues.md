@@ -8,6 +8,106 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 12 · The compact state dropped the retrieved evidence exactly when the model needed its text
+
+**Date:** 2026-09-19 · **Area:** retrieval × compact context · **Severity:** low
+(no failure; about one wasted step per run in the `evidence` arm)
+
+**Symptom.** Phase 3's first agent-level runs (`structured-p3-evidence-haiku45-x2`
+against `-tool-`): with the report's top chunks shown at PLAN, LOCALIZE
+shrank as designed (195 → 145 steps over 28 runs; `search_symbol` calls 39 →
+6) but PATCH grew by almost as much (85 → 112), and tokens per task did not
+move (41.3k → 41.2k). In the traces, 28 of the evidence arm's 33 PATCH-phase
+`read_file` calls re-read a range the evidence block had shown — the model's
+first PATCH action in 9 runs was to read the function it had just hypothesised
+about from the evidence.
+
+**Root cause.** My design: the evidence was rendered into the working state
+"during PLAN and LOCALIZE" and dropped in PATCH, on the theory that by then the
+model had read what it needed. It had not read it — it had *seen* it, in the
+evidence, and stated its hypothesis from that (LOCALIZE with zero tool calls in
+several runs). At PATCH the block was gone, `edit_file` needs the exact text,
+and the model paid a step to get it back.
+
+**Fix.** The evidence stays in the state while there is no patch in place
+(`not diff.strip()`): PLAN, LOCALIZE and PATCH up to the first edit. After an
+edit the model has the exact text in its window and the diff in the state;
+after an ANALYZE revert the tree is original again and the block returns. The
+rule is stateless and says what it means: "here is what retrieval found, until
+you have changed something".
+
+**Guard.** `tests/test_retrieval.py::test_evidence_mode_retrieves_for_the_report_and_offers_the_tool[compact]`
+asserts the block is present at the PATCH step before the edit and absent
+after it. The re-run (`docs/retrieval-design.md` §9) measures the effect:
+PATCH steps back to the control's, tokens per task below it.
+
+**Lesson.** The third entry in the same family as #8 and #9: the compact
+context is rebuilt every step, so every rule about what it shows is a rule
+about what the model *knows*. "Which phase we are in" was the wrong condition;
+"whether the model has anything to edit yet" was the real one.
+
+---
+
+## 11 · Whitespace-tolerant edits mis-indented inserted lines and would not let the model fix them
+
+**Date:** 2026-09-19 · **Area:** tools (`edit_file`, Phase 2a.1) · **Severity:**
+medium (one `budget_tokens` run in the Phase 3 experiment; every tolerant edit
+since 2a.1 left a mis-indented block — 13 of 13 in the last four runs)
+
+**Symptom.** `toolz_003`, `evidence` arm, run 1: the correct fix was in the
+tree by step 13, and the run went on to step 25 and the token cap — three more
+edits of the same five lines (steps 14, 16, plus five refused at the PATCH
+visit's cap of four), each read back showing `if key in d2:` at 13 spaces
+under a `for` at 8, and `del d2[key]` at 17. The harness passed the patch
+(Python accepts a block indented by any amount deeper than its parent), so
+the run counts as PASS on the cap; it cost $0.123 and 25 steps for a
+two-line change. Across the four most recent runs, all 13 whitespace-matched
+edits left a region whose indentation was not a multiple of four.
+
+**Root cause.** Two rules in `_reindent`. (1) A changed or inserted line was
+shifted by the *first line's* offset between the model's `old_string` and the
+file. In the trace the model's first line was right (4 spaces, delta 0) and
+every following line was off by one (9 for 8, 13 for 12); the kept lines were
+corrected to the file's indentation, the inserted `if key in d2:` kept its
+13. (2) A kept line always took the file's indentation, so when the model
+then tried to repair the damage with an edit that changed nothing but
+whitespace — three times, with the right absolute indentation in
+`new_string` — the tool wrote the file's wrong indentation back every time.
+The tolerance that 2a.1 added for a model that miscounts whitespace could not
+distinguish a miscount from a correction, and defaulted to the file even when
+the file was what the model was fixing.
+
+**Fix.** `_reindent` now places a changed or inserted line relative to the
+nearest kept line *above* it, by the offset the model gave it in `new_string`
+relative to that line (the anchor's own offset error cancels out); a kept
+line the model moved relative to its neighbour (a statement pulled under a
+new `if`) moves the same amount from the file's indentation; and an edit whose
+lines are all kept — only whitespace changed — is a deliberate
+re-indentation, written as given and aligned to the file's first line. Every
+whitespace-matched edit from the trace now yields 4 / 8 / 8 / 12 / 16.
+Separately, the runtime no longer waits for a turn the model may never end
+once a PATCH visit's edits are spent and the tree has changed: it runs the
+tests itself (a forced transition, noted in the state — "the 4 edits of this
+PATCH visit were used, so the runtime ran the tests"). In this trace that
+would have ended the run at step 17 instead of 25.
+
+**Guard.** `tests/test_tools.py::test_edit_file_reindents_inserted_lines_from_the_nearest_kept_line`
+and `::test_edit_file_honours_a_pure_reindentation` replay the trace's three
+edits verbatim against the file; the 2a.1 cases still pass.
+`tests/test_runtime.py::test_patch_edit_limit_refuses_further_edits_and_the_runtime_tests`
+covers the forced run and the case where the cap is spent without changing
+the tested tree (no run; the model must end its turn).
+
+**Lesson.** A tolerance is a model of the other side's mistakes. 2a.1's said
+"the model's whitespace is off by a constant"; the trace says "off by a
+constant from the second line on", and "sometimes the model is the one who is
+right". Both were visible in the first 2a.1 traces as 13-space blocks that
+happened not to matter — the tolerance's own output should have been checked
+for consistency (indentation a multiple of the file's unit) before the fix
+was declared done.
+
+---
+
 ## 10 · The local-embedder test asserted a judgement, not a wiring
 
 **Date:** 2026-09-18 · **Area:** retrieval / tests · **Severity:** low (test only;

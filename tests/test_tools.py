@@ -290,6 +290,77 @@ def test_edit_file_tolerates_indentation_mistakes_and_reindents(workspace: Works
     assert ambiguous.is_error and "matches 2 places" in ambiguous.output
 
 
+DISSOC = (
+    "def dissoc(d, *keys):\n"
+    "    d2 = dict()\n"
+    "\n"
+    "    if len(keys) < len(d) * .6:\n"
+    "        d2.update(d)\n"
+    "        for key in keys:\n"
+    "            del d2[key]\n"
+    "    else:\n"
+    "        remaining = set(d)\n"
+    "    return d2\n"
+)
+
+
+def test_edit_file_reindents_inserted_lines_from_the_nearest_kept_line(
+    workspace: Workspace,
+) -> None:
+    """Issue #11: the model's block is off by one from its second line on; the
+    lines it inserts must follow that (corrected) neighbour, not the first line."""
+    workspace.write_text("demo/dicttoolz.py", DISSOC)
+    result = code.edit_file(
+        workspace,
+        "demo/dicttoolz.py",
+        # 4 / 9 / 9 / 13 spaces against the file's 4 / 8 / 8 / 12 (from the trace)
+        "    if len(keys) < len(d) * .6:\n         d2.update(d)\n         for key in keys:\n"
+        "             del d2[key]",
+        "    if len(keys) < len(d) * .6:\n         d2.update(d)\n         for key in keys:\n"
+        "             if key in d2:\n                 del d2[key]",
+    )
+    assert not result.is_error and result.meta["match"] == "whitespace"
+    assert workspace.read_text("demo/dicttoolz.py") == DISSOC.replace(
+        "            del d2[key]\n",
+        "            if key in d2:\n                del d2[key]\n",
+    )
+
+
+def test_edit_file_honours_a_pure_reindentation(workspace: Workspace) -> None:
+    """Issue #11: when the model changes nothing but whitespace it is fixing the
+    indentation on purpose; its new_string is written as given, aligned to the
+    file's first line -- the old rule kept the file's (wrong) indentation."""
+    broken = DISSOC.replace(
+        "            del d2[key]\n", "             if key in d2:\n                 del d2[key]\n"
+    )  # 13 / 17 spaces: what the old rule produced in the trace
+    workspace.write_text("demo/dicttoolz.py", broken)
+    fixed = DISSOC.replace(
+        "            del d2[key]\n", "            if key in d2:\n                del d2[key]\n"
+    )
+    # The model's old_string is off by one again; its new_string is exactly right.
+    result = code.edit_file(
+        workspace,
+        "demo/dicttoolz.py",
+        "    if len(keys) < len(d) * .6:\n         d2.update(d)\n         for key in keys:\n"
+        "              if key in d2:\n                  del d2[key]",
+        "    if len(keys) < len(d) * .6:\n        d2.update(d)\n        for key in keys:\n"
+        "            if key in d2:\n                del d2[key]",
+    )
+    assert not result.is_error and result.meta["match"] == "whitespace"
+    assert workspace.read_text("demo/dicttoolz.py") == fixed
+    # ... and aligned to the file when the model's first line is off too (5 spaces).
+    workspace.write_text("demo/dicttoolz.py", broken)
+    result = code.edit_file(
+        workspace,
+        "demo/dicttoolz.py",
+        "     if len(keys) < len(d) * .6:\n         d2.update(d)\n         for key in keys:\n"
+        "              if key in d2:\n                  del d2[key]",
+        "     if len(keys) < len(d) * .6:\n         d2.update(d)\n         for key in keys:\n"
+        "             if key in d2:\n                 del d2[key]",
+    )
+    assert not result.is_error and workspace.read_text("demo/dicttoolz.py") == fixed
+
+
 def test_edit_file_not_found_shows_the_closest_region(workspace: Workspace) -> None:
     result = code.edit_file(
         workspace,

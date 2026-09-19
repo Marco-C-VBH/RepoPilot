@@ -368,10 +368,12 @@ def test_evidence_mode_retrieves_for_the_report_and_offers_the_tool(
     assert tool_event.data["meta"]["k"] == 3 and tool_event.data["policy"] == "executed"
     if context == "compact":
         state_at_localize = client.calls[2].messages[1].content
-        state_at_patch = client.calls[3].messages[1].content
+        state_before_edit = client.calls[3].messages[1].content  # PATCH, no patch yet
+        state_after_edit = client.calls[4].messages[1].content  # PATCH, the edit is in
         assert "Retrieved evidence" in state_at_localize
-        assert "Retrieved evidence" not in state_at_patch  # dropped once the model is patching
-        assert "Searches made: 'eviction size check'" in state_at_patch
+        assert "Retrieved evidence" in state_before_edit  # the exact text to edit from
+        assert "Retrieved evidence" not in state_after_edit  # issue #12: gone once patched
+        assert "Searches made: 'eviction size check'" in state_after_edit
 
 
 def test_tool_mode_offers_retrieve_without_pushing_evidence(tmp_path: Path) -> None:

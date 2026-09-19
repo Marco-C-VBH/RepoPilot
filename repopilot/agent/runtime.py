@@ -42,6 +42,7 @@ from repopilot.agent.policies import (
     string_list,
 )
 from repopilot.agent.prompts import (
+    EDITS_SPENT_NOTICE,
     EMPTY_REPLY_NUDGE,
     FINALIZE_INSTRUCTIONS,
     HYPOTHESIS_REQUEST,
@@ -312,6 +313,22 @@ class _Execution:
                 edits_this_visit += edits
                 if termination or (termination := self.spent()):
                     return termination
+                if edits_this_visit >= self.limits.patch_edits:
+                    diff = self.toolbox.workspace.diff()
+                    if diff.strip() and diff != tested:
+                        # The visit's edits are spent and the tree has changed: only
+                        # the tests can move the run on, so the runtime runs them
+                        # instead of waiting for a turn the model may never end
+                        # (issue #11's trace: eight steps of refused edits to the cap).
+                        self.state.forced_transitions += 1
+                        self.intervention("edits_spent", edits=edits_this_visit)
+                        note = (
+                            f"step {self.tracker.steps}: the {self.limits.patch_edits} edits of "
+                            "this PATCH visit were used, so the runtime ran the tests."
+                        )
+                        self.state.notes.append(note)
+                        self.append(user(EDITS_SPENT_NOTICE), "nudge")
+                        return None
                 continue
             if response.stop_reason is StopReason.OTHER:
                 return Termination.MODEL_STOPPED
