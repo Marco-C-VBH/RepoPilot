@@ -104,12 +104,13 @@ top-k with each chunk's per-channel rank, latency. That is the data for
   Nothing is pushed; the model decides whether to call it.
 - `evidence` — the tool, plus the runtime retrieves the top 5 chunks for the
   bug report before PLAN and shows them as *retrieved evidence*: in the PLAN
-  prompt with the full history; in the WORKING STATE during PLAN and LOCALIZE
-  with the compact context (dropped from the state in PATCH and ANALYZE, so
-  it costs nothing once the model is editing). Budget: 5 chunks, at most
-  4,000 characters — a fraction of spec §8's 8–12k tokens, chosen because the
-  compact arm's whole prompt is ~3.6k tokens per call and the evidence must
-  not undo Phase 2b.
+  prompt with the full history; in the WORKING STATE with the compact context
+  while no patch is in place — PLAN, LOCALIZE and PATCH up to the first edit
+  (as first built it was dropped at PATCH, which made the model re-read it
+  before editing — issue #12, §8; changed for Phase 3.1). Once the model is
+  editing it costs nothing. Budget: 5 chunks, at most 4,000 characters — a
+  fraction of spec §8's 8–12k tokens, chosen because the compact arm's whole
+  prompt is ~3.6k tokens per call and the evidence must not undo Phase 2b.
 
 The baseline agent does not get retrieval: it is the Phase 1 control and the
 architecture ablation's other arm.
@@ -336,3 +337,98 @@ If `evidence` still does not beat `none` on tokens with the re-reads gone,
 the evidence block's ~800 tokens per call cost more than the localization it
 saves on v0, and the honest conclusion is that runtime-injected evidence is a
 step saver, not a token saver, on a benchmark where localization is free.
+
+## 10. Phase 3.1 results (2026-09-19, `structured-p31-none-haiku45-x2`, `structured-p31-evidence-haiku45-x2`)
+
+Haiku, compact context, 2 × 14 runs per arm, both arms with the three §9
+fixes; `evidence` on `bm25,dense,symbol` with the local embedder. Measured
+against the §9 table:
+
+| | expected `none` | measured `none` | expected `evidence` | measured `evidence` |
+|---|---|---|---|---|
+| success | 26–27 / 28 | **28 / 28** | 26–27 / 28, same failing task | 27 / 28 (`cachetools_003.1`, `budget_tokens`) ✓ |
+| LOCALIZE steps per run | 6–7 | 6.6 ✓ | ≤ 5.2 | **4.8** ✓ |
+| PATCH steps per run | 3–3.5 | 3.6 | ≤ 3.5 | **2.9** ✓ |
+| PATCH reads overlapping the evidence | – | – | < 5 in 28 runs | 2 with the evidence in view ✓ (4 more after the first edit, when it is no longer shown) |
+| tool calls per run | 8–9 | 9.0 ✓ | ≤ 6.5 | **5.6** ✓ |
+| tokens per task (median) | 37–41k | 37.3k ✓ | ≥ 2k below `none` | 36.8k, −0.5k ✗ |
+| whitespace-matched edits leaving a mis-indented block | 0 of N | 0 of 2 ✓ | 0 of N | 0 of 2 ✓ |
+| edit-cap forced test runs | reported | 0 | reported | 0 |
+| `budget_tokens` | ≤ 2 / 28 | 0 ✓ | ≤ 1 / 28 | 1 ✓ |
+
+Steps per run 11.4 → 8.9 (−22%), tool calls 9.0 → 5.6 (−38%), repeated calls
+after the window 18 → 6, LOCALIZE cap reached (`hypothesis_requested`) 10 → 4,
+`search_symbol` 41 → 5 and `search_code` 39 → 21 calls; cost $1.50 → $1.41
+for the 28 runs (−6%). The evidence held the region the model eventually
+edited in 26 of 28 runs; the two misses are `cachetools_005` — the offline
+sole miss of §7 (the evidence shows `__init__.py` and `func.py`, the fix is
+in `_cached.py`) — and both of those runs localized by search and passed (9
+and 16 steps). Retrieval cost the run itself nothing: 43 ms per query at the
+median (499 ms for the first query after the index loads), 2.0–4.0k
+characters of evidence per run (median 3.3k).
+
+**Tokens: the pre-registered fallback is the result.** The median is flat
+(−0.5k, −1.2%); the mean is 44.4k → 42.3k (−2.1k, −4.8%) and the paired
+per-task means (two repeats each) are lower under `evidence` for 9 of 14
+tasks, paired Δ −2.1k mean and −2.2k median. Where the step saving goes is
+visible per phase: each call's input grows by about the evidence block —
+PLAN 2.2k → 3.5k tokens (+1.3k), LOCALIZE 3.7k → 4.7k per call (+1.0k),
+PATCH 4.0k → 4.6k (+0.6k; the evidence is in view until the first edit) —
+so 22% fewer calls at 20–26% more tokens each is a wash at the median. The
+saving is concentrated in the runs that were long without evidence
+(`cachetools_001` 70k → 52k, `tenacity_002` 56k → 42k, `cachetools_002`
+54k → 44k, per-task means), and the runs that were already short pay for the
+block without getting a step back (`tenacity_001` 28k → 38k, `tenacity_003`
+24k → 31k: seven steps either way, every call ~1k larger). So, as §9 said
+it would have to be written: on v0, where localization is free, runtime-
+injected evidence is a step, tool-call and re-read saver (−22%, −38%, −67%)
+and at best a small token saver (−5% mean, flat median) — what it removes
+from LOCALIZE it charges back on every call before the first edit. The lever
+is the block's size (five chunks of up to 30 lines, ~1k tokens per call);
+`evidence_k 3`, or the same five chunks shown only at PLAN, is the next
+experiment on this axis, and it waits for Bench v1 (spec order), where
+localization is not free and the measurement changes character.
+
+**The one failure is the hardest v0 task on a budget edge, not an evidence
+effect.** `cachetools_003` (LRUCache evicting the key just read) took 17–22
+steps and 70–101k tokens in all four runs across the two arms, with the same
+shape every time: the first patch (`self.__touch(key)` in `__getitem__`)
+turns the two target tests green and breaks `test_missing_getsizeof`, whose
+`__missing__` returns a value without storing it. Three runs then found
+`if key in self.__order:`; the fourth (`evidence`, `.1`) wrote
+`if key in self.__data:` — `__data` is `Cache`'s private attribute,
+name-mangled to `_Cache__data`, so inside `LRUCache` the name does not exist
+and every read raises `AttributeError` (35 passed, 21 failed on the hidden
+suite) — and ran out the 100k token budget at 100,984 on the reply that ends
+the PATCH visit, one TEST run short of seeing it. The evidence had done its
+part: this run's first LOCALIZE visit was the fastest of the four (4 steps;
+the block held `LRUCache`, `__init__`, `__touch`, `__delitem__`). The second
+LOCALIZE visit, after ANALYZE kept the patch, spent all ten calls
+re-establishing the same picture — `tests/__init__.py` 231–260 read twice,
+`__touch` twice, the same `search_code` twice — and forced the hypothesis;
+those re-reads are 3 of the arm's 6 repeated calls after the window, and
+they are what the K = 3 window allows by design (`docs/runtime-design.md`
+§3, §8.4): the content was no longer in view. The `none` arm passed this task twice
+(21 and 18 steps, 88k and 70k tokens), which is why its success is 28 / 28
+against an expected 26–27: not a runtime change — the edit-cap path never
+fired — but the task sitting on the edge of the budget, n = 2.
+
+**The two Phase 3 artifacts are gone.** Whitespace-matched edits: two per
+arm, four in all, every region correctly indented and all four runs green —
+`toolz_001` × 2 (`sliding_window`, continuation lines indented differently
+from the file) and `cachetools_002` × 2, the issue #11 shape exactly: every
+line of the model's `old_string` one space deeper than `TLRUCache.__setitem__`
+in the file, three lines inserted inside the `with` block, placed at 12
+spaces where they belong (they had gone to 13 before the fix). PATCH reads
+that repeated what the evidence showed: 28 of 33 in §8, now 2 of 11 while
+the evidence is in view — `cachetools_003`, reading the whole `LRUCache`
+class after the 30-line clip cut its last seven lines (the block says
+`read_file for the rest`), and `tenacity_003`, taking six lines around the
+edit site — and 4 after the first edit, when the state shows the diff instead of the
+evidence and a re-read of the edited region is the right move. The
+edit-cap forced test run (§9 fix 2) never fired in 56 runs: no PATCH visit
+used its four edits (`refused_tool_calls` 0 in both arms). The guard is
+covered by `tests/test_runtime.py`; the runs did not exercise it.
+
+Not measured here, on purpose: success on retrieval, which v0 cannot show
+(§1), and the `tool` arm, whose 0 calls in 28 runs (§8) is the result.

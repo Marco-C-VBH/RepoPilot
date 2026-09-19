@@ -14,11 +14,12 @@ with every added feature justified by an ablation.
 Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
 2b) — done and measured: Haiku with three repeats per arm, Sonnet and luna
 once per arm, results below; Phase 3 (retrieval: ast chunks, BM25 + local
-embeddings + symbols, RRF) — built and measured offline and on the agent
-(below); two runtime fixes the agent runs demanded (issues #11, #12) are in,
-and the re-run (Phase 3.1) is pending.** Every number here is measured by a
-run archived under
-`evals/experiments/`; nothing is a placeholder.
+embeddings + symbols, RRF) — done and measured offline and on the agent,
+including the re-run after the two fixes the first agent runs demanded
+(issues #11, #12; Phase 3.1, below). Next: the benchmark (Bench v1, 30+
+tasks) — the spec's resume-ready line, and what every later phase needs.**
+Every number here is measured by a run archived under `evals/experiments/`;
+nothing is a placeholder.
 
 ## Results so far
 
@@ -489,8 +490,8 @@ The structured agent gets it two ways, measured separately (`--retrieval`):
 `tool` adds `retrieve(query, k, include_tests)` to LOCALIZE and PATCH, and the
 model decides whether to call it; `evidence` also has the runtime retrieve
 the report's top five chunks before PLAN and keep them in front of the model
-while it plans and localizes (in the PLAN prompt with the full history; in the
-working state with the compact context, dropped once the model is patching).
+until its first edit (in the PLAN prompt with the full history; in the
+working state with the compact context while no patch is in place).
 Every retrieval is in the trace with each chunk's rank in each channel.
 
 What v0 can measure about it is written down first, in
@@ -546,8 +547,41 @@ of the arm's 33 PATCH-phase reads re-read what the evidence had shown
 2a.1 whitespace-tolerant edit (inserted lines re-indented by the wrong
 offset, and a model correcting the indentation overruled by the file — issue
 #11; one `toolz_003` run spent 12 steps and hit the cap with the right patch
-already in place). Both are fixed; the re-run is pre-registered in
-`docs/retrieval-design.md` §9 and its numbers go here.
+already in place). Both were fixed and the experiment re-run with the
+expectations written first (`docs/retrieval-design.md` §9; the control
+re-run too, because a shared tool changed).
+
+**Phase 3.1** (Haiku, compact, 2 × 14 per arm,
+`evals/experiments/structured-p31-{none,evidence}-haiku45-x2`; §10 of the
+design doc has the full reading):
+
+| arm | success | steps | LOCALIZE / PATCH steps per run | tool calls | re-reads after the window | LOCALIZE cap reached | tokens / task (median · mean) | cost / task | `budget_tokens` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `none` | **28 / 28** | 11.4 | 6.6 / 3.6 | 9.0 | 18 | 10 | 37.3k · 44.4k | $0.047 | 0 |
+| `evidence` | 27 / 28 | **8.9** | **4.8 / 2.9** | **5.6** | **6** | **4** | 36.8k · 42.3k | $0.045 | 1 |
+
+Every step-side expectation held with margin — steps −22%, tool calls −38%,
+`search_symbol` calls 41 → 5, PATCH back under 3 steps (the re-reads: 2 of
+11 PATCH reads while the evidence is in view, down from 28 of 33), the
+evidence holding the region the model went on to edit in 26 of 28 runs (the
+two misses are `cachetools_005`, the offline miss; both passed by search) —
+and the token expectation did not: median −0.5k against a pre-registered
+≥ 2k, mean −4.8%, cost −6%. The reason is in the per-phase numbers: each
+call before the first edit carries the evidence block, so PLAN 2.2k → 3.5k
+input tokens, LOCALIZE 3.7k → 4.7k per call, PATCH 4.0k → 4.6k; 22% fewer
+calls at 20–26% more tokens each is a wash at the median, a saving only on
+the runs that were long without it (`cachetools_001` 70k → 52k) and a cost
+on the short ones (`tenacity_003` 24k → 31k, seven steps either way). So
+the pre-registered fallback is the conclusion: on v0, where localization is
+free, runtime-injected evidence is a step, tool-call and re-read saver, not
+a token saver. The one failure, `cachetools_003.1`, is the benchmark's
+hardest task on a budget edge, not an evidence effect — 17–22 steps and
+70–101k tokens in all four runs across both arms, the first patch breaking
+`test_missing_getsizeof` every time; this run's second patch used a
+name-mangled attribute that does not exist in the subclass and the run hit
+the 100k token cap at 100,984, one TEST run short of seeing it. The two
+whitespace-matched edits per arm all landed at the right indentation (issue
+#11's shape among them); the edit-cap forced test never fired in 56 runs.
 
 ## RepoPilot-Bench v0
 
@@ -628,7 +662,7 @@ repopilot/                 library
   agent/runtime.py         StructuredAgent: the state machine (Phase 2a, the treatment arm)
   agent/context.py         context strategies (spec §8 / §12.3): full history, or the working
                            state + the last K tool steps rebuilt every call (Phase 2b);
-                           retrieved evidence in the state during PLAN / LOCALIZE (Phase 3)
+                           retrieved evidence in the state until the first edit (Phase 3)
   tracing/events.py        Trace: JSONL events (model_call, tool_call, phase, test_run, decision,
                            intervention, state, patch, run_end)
   sandbox/limits.py        resource limits applied to every sandbox container

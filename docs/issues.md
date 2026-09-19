@@ -38,8 +38,12 @@ you have changed something".
 
 **Guard.** `tests/test_retrieval.py::test_evidence_mode_retrieves_for_the_report_and_offers_the_tool[compact]`
 asserts the block is present at the PATCH step before the edit and absent
-after it. The re-run (`docs/retrieval-design.md` §9) measures the effect:
-PATCH steps back to the control's, tokens per task below it.
+after it. The re-run (`docs/retrieval-design.md` §9, §10) measured the
+effect: PATCH reads repeating the evidence 28 of 33 → 2 of 11, PATCH steps
+4.0 → 2.9 per run (control 3.6); tokens per task did not fall below the
+control's at the median — the block's cost on every call before the first
+edit is the reason, and that is the pre-registered fallback conclusion, not a
+bug.
 
 **Lesson.** The third entry in the same family as #8 and #9: the compact
 context is rebuilt every step, so every rule about what it shows is a rule
@@ -96,7 +100,10 @@ and `::test_edit_file_honours_a_pure_reindentation` replay the trace's three
 edits verbatim against the file; the 2a.1 cases still pass.
 `tests/test_runtime.py::test_patch_edit_limit_refuses_further_edits_and_the_runtime_tests`
 covers the forced run and the case where the cap is spent without changing
-the tested tree (no run; the model must end its turn).
+the tested tree (no run; the model must end its turn). Phase 3.1 (56 runs,
+`docs/retrieval-design.md` §10): four whitespace-matched edits, two of them
+this issue's exact shape, all four regions correctly indented; the forced run
+never fired — no PATCH visit used its four edits.
 
 **Lesson.** A tolerance is a model of the other side's mistakes. 2a.1's said
 "the model's whitespace is off by a constant"; the trace says "off by a
