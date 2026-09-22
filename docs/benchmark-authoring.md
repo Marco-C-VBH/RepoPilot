@@ -42,19 +42,24 @@ Notes from the survey:
 
 ```
 evals/benchmark/sources/<id>/
-  task.toml         id, repo, commit, category, difficulty, test_command, [env]
-  bug.patch         clean tree -> buggy tree  (the mutation; source files only)
+  task.toml         id, repo, commit, category, test_command, suite, report_level,
+                    [entry_points], [authored_difficulty], [site_note], [env];
+                    real tasks: source = "real", fix_commit
+  bug.patch         clean tree -> buggy tree  (the mutation; source files only; mutation tasks)
   hidden.patch      adds tests/test_repopilot_<id>.py (new files only)
   description.md    the bug report the agent sees
 ```
 
 `make_task.py` turns that into `evals/benchmark/tasks/<id>.json` with the derived
-`gold_patch` (exact reverse of the mutation), `gold_files` / `gold_symbols` (from
-the hunks and the AST of the buggy files), and `fail_to_pass` / `pass_to_pass`
-(from two sandbox runs: buggy + hidden tests versus fixed + hidden tests). It
-refuses to write a task whose hidden tests pass with the bug, whose gold patch
-breaks an existing test, whose hidden patch edits an existing file, or whose
-test command never collects the hidden tests.
+`gold_patch` (exact reverse of the mutation, or a real task's fix hunks),
+`gold_files` / `gold_symbols` (from the hunks and the AST of the buggy files),
+`fail_to_pass` / `pass_to_pass` (from two sandbox runs: buggy + hidden tests
+versus fixed + hidden tests), and — since Bench v1 — `surface_symbols` /
+`surface_files` / `cross_module` from the report audit and the derived
+`difficulty` (see "Bench v1" below). It refuses to write a task whose hidden
+tests pass with the bug, whose gold patch breaks an existing test, whose hidden
+patch edits an existing file, whose test command never collects the hidden
+tests, or whose report names what its tier forbids.
 
 ## Workflow for one task
 
@@ -108,14 +113,12 @@ caught too broadly. Never a syntax error, never a change that only affects a
 message string.
 
 **Descriptions.** Write what a user would observe and how to reproduce it; never
-name the fix. Difficulty is set by how much the description gives away:
-
-- *easy* — names the function or the test that fails
-  ("`LRUCache.__getitem__` no longer refreshes the entry; `test_lru` fails").
-- *medium* — describes behaviour through the public API only
-  ("after `cache[k]` is read, `k` is still the first entry evicted").
-- *hard* — the symptom is one or two layers away from the cause
-  ("a `@cached` function recomputes on every call once the cache has filled up").
+name the fix. In v0 the authored difficulty was set by how much the description
+gives away (easy names the function or the failing test; medium describes
+behaviour through the public API; hard puts the symptom a layer or two from the
+cause). Since Bench v1 that judgement is a rule: the report's *tier*
+(`report_level`) is declared and audited, and `difficulty` is derived (below).
+The authored label survives only as `authored_difficulty` in `task.toml`.
 
 **Hidden tests.** One new file named `tests/test_repopilot_<id>.py` (or the repo's
 test directory), exercising the behaviour with inputs different from the existing
@@ -148,31 +151,33 @@ audit trail.
 
 ## Coverage (v0: 14 tasks, all built and validated 2026-09-10)
 
-| id | repo | category | difficulty | mutation site |
+| id | repo | category | difficulty (derived; authored) | mutation site |
 | --- | --- | --- | --- | --- |
-| cachetools_001 | cachetools | cache_invalidation | medium | `TTLCache` expiry check |
-| cachetools_002 | cachetools | cache_invalidation | hard | `TLRUCache` / `_TimedCache.expire` |
-| cachetools_003 | cachetools | state_management | medium | `LRUCache.__getitem__` touch order |
-| cachetools_004 | cachetools | off_by_one | easy | `Cache.__setitem__` size accounting |
-| cachetools_005 | cachetools | wrong_condition | medium | `LFUCache.popitem` / `cached()` key handling |
-| tenacity_001 | tenacity | retry_logic | easy | `stop_after_attempt` boundary |
-| tenacity_002 | tenacity | retry_logic | medium | `wait_exponential` growth / cap |
-| tenacity_003 | tenacity | exception_handling | medium | `retry_if_exception_type` matching |
-| tenacity_004 | tenacity | exception_handling | hard | `Retrying.iter` reraise path |
-| tenacity_005 | tenacity | missing_check | medium | `stop_after_delay` / `wait_chain` bounds |
-| toolz_001 | toolz | off_by_one | easy | `itertoolz.sliding_window` window offset |
-| toolz_002 | toolz | wrong_condition | medium | `itertoolz.unique` key bookkeeping |
-| toolz_003 | toolz | missing_check | medium | `dicttoolz.dissoc` missing-key guard |
-| toolz_004 | toolz | state_management | hard | `functoolz.memoize` default cache |
+| cachetools_001 | cachetools | cache_invalidation | easy (medium) | `TTLCache` expiry check |
+| cachetools_002 | cachetools | cache_invalidation | easy (hard) | `TLRUCache` / `_TimedCache.expire` |
+| cachetools_003 | cachetools | state_management | easy (medium) | `LRUCache.__getitem__` touch order |
+| cachetools_004 | cachetools | off_by_one | easy (easy) | `Cache.__setitem__` size accounting |
+| cachetools_005 | cachetools | wrong_condition | medium (medium): cross-module | `LFUCache.popitem` / `cached()` key handling |
+| tenacity_001 | tenacity | retry_logic | easy (easy) | `stop_after_attempt` boundary |
+| tenacity_002 | tenacity | retry_logic | easy (medium) | `wait_exponential` growth / cap |
+| tenacity_003 | tenacity | exception_handling | easy (medium) | `retry_if_exception_type` matching |
+| tenacity_004 | tenacity | exception_handling | easy (hard) | `Retrying.iter` reraise path |
+| tenacity_005 | tenacity | missing_check | easy (medium) | `stop_after_delay` / `wait_chain` bounds |
+| toolz_001 | toolz | off_by_one | easy (easy) | `itertoolz.sliding_window` window offset |
+| toolz_002 | toolz | wrong_condition | easy (medium) | `itertoolz.unique` key bookkeeping |
+| toolz_003 | toolz | missing_check | medium (medium): hidden-only | `dicttoolz.dissoc` missing-key guard |
+| toolz_004 | toolz | state_management | hard (hard): hidden-only, two hunks | `functoolz.memoize` default cache |
 
 The constraints that mattered: every category at least once (`other` is
-deliberately unused), roughly 3 easy / 8 medium / 3 hard, and each repository
-contributing tasks from more than one category. Only two of the fourteen tasks
-(`toolz_003`, `toolz_004`) are caught by the hidden test alone, short of the
-three-to-five target above — the Phase 4 expansion should favour hidden-only
-tasks, which measure reproduction from the description rather than from a red
-test. `tests/test_benchmark_tasks.py` keeps every shipped task consistent with
-its source directory; when a task is regenerated, commit both.
+deliberately unused), roughly 3 easy / 8 medium / 3 hard as authored, and each
+repository contributing tasks from more than one category. Only two of the
+fourteen tasks (`toolz_003`, `toolz_004`) are caught by the hidden test alone,
+short of the three-to-five target above — which is why Bench v1 (below) makes
+hidden-only tasks half of what it adds. Under the v1 rule the authored labels
+mostly collapse to *easy*: every v0 report names the changed symbol, and that
+is what the leak audit found. `tests/test_benchmark_tasks.py` keeps every
+shipped task consistent with its source directory and its difficulty equal to
+the derived one; when a task is regenerated, commit both.
 
 ## Acceptance (Phase 0 exit)
 
@@ -188,3 +193,87 @@ checklist — they describe the harness, not the agent. v0 passed on 2026-09-10:
 `null` 0/14 (all `fail_to_pass_failing`, 21 s), `gold` 28/28 with 14/14 tasks
 deterministic across two repeats (38 s); the README's benchmark section keeps
 the numbers.
+
+## Bench v1 (2026-09-22): what changed in the workflow
+
+The design and the pre-registered expectations are in
+`docs/bench-v1-design.md`; this is the authoring side of it. Everything below
+is enforced by `make_task.py` unless it says "printed".
+
+**Repositories.** click 8.3.0, rich 14.1.0, jinja 3.1.6, sqlparse 0.5.3, pinned
+in the design's §3 with their install commands and test layouts; the survey
+notes there (which test files cover which module, what never goes in a test
+command) are the starting point for every task.
+
+**New `task.toml` keys.** `suite = "v1"`; `report_level` (`public_api` by
+default, `symptom_only` for the strict tier, `internal` only for v0);
+`entry_points` (symptom_only: the at most three names the report may use, e.g.
+`["sqlparse.format"]` or `["Console.print", "Panel"]`); `authored_difficulty`
+(your estimate, kept for the record, never shipped); `site_note` (one line on
+why a site the site audit flagged was kept); for a real task `source = "real"`
+and `fix_commit`, with `commit` = the fix's parent and no `bug.patch`.
+`difficulty` is no longer a key: the shipped value is derived — one point each
+for cross-module, hidden-only, a multi-site or cross-file fix and a
+symptom-only report; 0 easy, 1 medium, 2+ hard.
+
+**The report audit** runs before the image build and fails the task on: the
+name of a changed symbol (bare or qualified, whole identifier, case-insensitive;
+a public alias such as the `truncate` filter for `do_truncate` is fine and only
+warned about), the name or path of a changed file, a traceback frame or
+`file.py:line` reference, a private name (leading underscore in the name or in
+a module path component) at the `public_api` tier, anything that resolves to a
+repository symbol and is not an entry point at the `symptom_only` tier. It
+resolves the report's identifiers against the buggy tree's symbol table — the
+one `search_symbol` uses — so back-tick every identifier: in prose only dotted
+names, snake_case, CamelCase and calls are recognised, a bare `Table` in a
+sentence is English. What it resolves becomes `surface_symbols` /
+`surface_files`, and `cross_module` is "no surface file is a gold file"
+(defining files, not re-exporting ones: cachetools' `cached` is defined in
+`__init__.py`, so `cachetools_005` is cross-module against `_cached.py`).
+
+**The site audit** (printed by `--dry-run` and by every build) lists comments
+and docstrings within eight lines of a hunk that share two or more sub-tokens
+with the changed lines, changelog lines at the pinned commit that mention a gold
+symbol, and buggy lines matching a banned textbook shape (mutable default
+argument, `if not x` where a `None` check belongs, `type(x) ==`, an unguarded
+`del d[k]`, a bare `except:`, `== None`). Read it and move the site, or keep it
+with a `site_note`.
+
+**Real tasks.** `make_task --init SRC --source real --fix-commit <sha> --commit
+<parent-sha> ...`; `make_task` derives the gold patch as the fix commit's
+Python source hunks against its parent (tests, changelog and docs excluded),
+checks the parent relationship, and expects the fix's tests transplanted into a
+new `tests/test_repopilot_<id>.py` in `hidden.patch` like any other task. The
+report is written by us at the public_api or symptom_only tier from what the
+upstream issue reports — never the issue text.
+
+**Where the work happens.** The cloud workspace can clone the four repositories
+and run their visible test suites, so a task's `bug.patch`, `hidden.patch` and
+description arrive on the Mac already checked: the mutation applies, the
+visible suite behaves as claimed (green for a hidden-only task), the hidden
+test fails with the bug and passes without it, the audit passes. On the Mac:
+`uv run python scripts/make_task.py evals/benchmark/sources/<id>` (Docker),
+read the report, commit the source directory and the JSON together.
+
+**Refreshing metadata.** `make_task SRC --refresh` re-runs only the git half —
+patch normalization, the audit, the derived fields — on an already-built task,
+keeping the sandbox-derived test lists and patch text. This is how the 14 v0
+files were regenerated on 2026-09-22 (no patch, test, command or description
+changed). It refuses when the fix, the hidden tests, the test command or the
+description differ from the shipped task; those need a full `make_task`.
+
+**Checking the suite.** `uv run python scripts/validate_tasks.py` prints one
+line per task with the v1 fields and the suite report: counts for v0, v1-new
+and all, and the v1-new targets of the design's §2 (36 tasks, hidden-only ≥ 18,
+cross-module ≥ 18, symptom_only 12, multi-site ≥ 8 with cross-file ≥ 4, every
+category ≥ 2, at most 15 changed lines). `--audit` re-runs the report audit of
+every task against its tree; `--strict` exits 1 on a missed target or an
+unaudited task.
+
+**Running the ablation.** `python -m evals.runner --solver baseline --suite
+v1-new --report {full,redacted,generic} [--no-run-tests]` gives the four arms
+of `docs/leak-audit.md` §4 (`--report redacted` is arm B′: every repository
+symbol in the report replaced by a placeholder, derived at run time from the
+task file); `scripts/memorization_probe.py --models ...` asks each model to
+write the gold symbols from memory and scores the replies against the pinned
+source.

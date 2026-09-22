@@ -16,10 +16,13 @@ Phase 2 (structured runtime, 2a; tolerant edits, 2a.1; context compaction,
 once per arm, results below; Phase 3 (retrieval: ast chunks, BM25 + local
 embeddings + symbols, RRF) — done and measured offline and on the agent,
 including the re-run after the two fixes the first agent runs demanded
-(issues #11, #12; Phase 3.1, below). Next: the benchmark (Bench v1, 30+
-tasks) — the spec's resume-ready line, and what every later phase needs.**
-Every number here is measured by a run archived under `evals/experiments/`;
-nothing is a placeholder.
+(issues #11, #12; Phase 3.1, below). Bench v1 (50 tasks on click, rich, jinja,
+sqlparse plus the v0 three; reports audited by tier, hidden-only and
+cross-module by construction) — designed and pre-registered in
+`docs/bench-v1-design.md`, harness built (report audit, real tasks, suite
+report, leak-ablation switches, memorization probe); the tasks are next, one
+repository at a time.** Every number here is measured by a run archived under
+`evals/experiments/`; nothing is a placeholder.
 
 ## Results so far
 
@@ -141,7 +144,7 @@ uv sync --extra retrieval                 # + the local embedding model (fastemb
 uv run pytest                             # unit tests; Docker tests skip if no daemon
 uv run pytest -m docker                   # sandbox end-to-end tests (needs Docker running)
 uv run ruff check . && uv run ruff format --check .
-uv run python scripts/validate_tasks.py   # validate every task in evals/benchmark/tasks
+uv run python scripts/validate_tasks.py   # validate every task + the suite report (v1 targets)
 uv run python -m evals.runner --list      # tasks that a benchmark run would select
 ```
 
@@ -243,11 +246,15 @@ patch and regression rates, steps / tool calls / test runs, invalid-tool-call
 rate, tokens, cost (median and total), solve latency p50 / p95, termination
 counts, success by category and difficulty — and a first-cut failure taxonomy
 (spec §11.2) derived from the verdict, the termination and whether the agent ever
-read or edited a gold file: `retrieval_failure`, `reasoning_failure`,
-`wrong_localization`, `incorrect_patch`, `regression_introduced`,
-`budget_exceeded`, `test_misunderstanding`, `tool_failure`, `environment_failure`.
-The taxonomy is heuristic and exists to point at the highest-leverage problem, not
-to be ground truth.
+read or edited a gold file: `retrieval_failure` (localization: no gold file read
+or edited, whatever ended the run), `reasoning_failure`, `wrong_localization`,
+`incorrect_patch`, `regression_introduced`, `budget_exceeded` (a gold file was
+reached, the budget ran out), `test_misunderstanding`, `tool_failure`,
+`environment_failure`. The taxonomy is heuristic and exists to point at the
+highest-leverage problem, not to be ground truth. Since Bench v1 the block also
+carries the localization measures the leak audit computed by hand — first edit
+in a gold file, gold file read before the first edit — and success broken down
+by suite, repository, report tier, hidden-only, cross-module and fix shape.
 
 ### Phase 1 findings
 
@@ -679,16 +686,24 @@ evals/                     RepoPilot-Bench
   benchmark/examples/      a fully filled-in illustrative task (not runnable)
   benchmark/sources/<id>/  human-written task sources: task.toml, bug.patch, hidden.patch,
                            description.md (docs/benchmark-authoring.md)
-  benchmark/authoring.py   source dir -> derived gold patch, symbols, f2p/p2p -> task JSON
+  benchmark/authoring.py   source dir -> derived gold patch, symbols, f2p/p2p -> task JSON;
+                           real tasks from a fix commit; --refresh re-derives the audit fields
+  benchmark/audit.py       Bench v1: report audit (tiers, forbidden names), site audit,
+                           redaction for the leak ablation, surface symbols / cross_module
+  benchmark/suite.py       the shape of the benchmark: counts per suite and the v1 targets
   benchmark/tasks/         the benchmark itself, one JSON file per task
   judge.py                 fail_to_pass ∧ pass_to_pass -> Verdict with reason codes
   solvers.py               Solver protocol; `null` and `gold` oracles; `baseline` and `structured`
                            agent solvers (same workspace / sandbox / budget, different agent)
   harness.py               build image -> solve -> evaluate in a fresh sandbox -> TaskResult
                            (+ agent record, trace file, test-file edits stripped from patches)
-  metrics.py               agent metrics (spec §11.1) and the failure taxonomy (spec §11.2)
+  metrics.py               agent metrics (spec §11.1), the failure taxonomy (spec §11.2),
+                           breakdowns by suite / repo / tier / hidden-only / cross-module / shape,
+                           localization measures (first edit in a gold file)
+  memorization.py          the memorization probe: gold symbols written from memory, scored
   runner.py                CLI: results.jsonl, summary.json, logs/, traces/, --repeat, --expect,
-                           --model and --max-* budget flags, --max-run-cost
+                           --model and --max-* budget flags, --max-run-cost, --suite,
+                           --report / --no-run-tests (leak ablation arms)
 docker/base.Dockerfile     base image for sandbox containers
 docs/benchmark-authoring.md  how tasks are made: target repos, workflow, rules, coverage plan
 docs/issues.md             engineering log: symptom -> root cause -> fix -> guard
@@ -697,10 +712,14 @@ docs/runtime-design.md     Phase 2 design, pre-registered expectations and resul
 docs/retrieval-design.md   Phase 3 design and pre-registered expectations (offline and agent-level)
 evals/retrieval.py         offline retrieval evaluation: every configuration on every task
 evals/experiments/         archived runs behind the numbers in this README (summary, results, traces)
-scripts/                   make_task.py, validate_tasks.py, export_task_schema.py, model_smoke.py,
+docs/bench-v1-design.md    Bench v1 design and pre-registration: repositories, task rules,
+                           report tiers, audit, leak ablation, expectations
+scripts/                   make_task.py, validate_tasks.py (+ the suite report and --audit),
+                           export_task_schema.py, model_smoke.py,
                            archive_run.py (results/<run> -> evals/experiments/<name>),
                            leak_scan.py (traces never contain a hidden test; how each model localizes),
-                           retrieval_eval.py (Recall@k / MRR per channel and fusion, no model)
+                           retrieval_eval.py (Recall@k / MRR per channel and fusion, no model),
+                           memorization_probe.py (recall of gold symbols per model, no tools)
 tests/                     unit tests (fast) + `-m docker` end-to-end tests;
                            test_benchmark_tasks.py checks the shipped tasks against their sources
 ```
@@ -713,11 +732,21 @@ success. Success is deterministic — after the candidate patch (plus the hidden
 patch) is applied, every `fail_to_pass` test must pass **and** every `pass_to_pass`
 test must still pass. There is no LLM judge.
 
-Two task sources: `real` (the bug already exists at `base_commit`) and `mutation`
-(`base_commit` is clean and the harness injects the bug with `bug_patch` before the
-agent sees the repository). See `evals/benchmark/schema.py` for every field and the
-invariants the loader enforces, and `evals/benchmark/examples/example_000.json` for
-a complete example.
+Two task sources: `real` (the bug already exists at `base_commit`, the fix was
+taken from `fix_commit`) and `mutation` (`base_commit` is clean and the harness
+injects the bug with `bug_patch` before the agent sees the repository). Since
+Bench v1 a task also records what its bug report gives away: the `suite` it
+belongs to, its `report_level` (`internal` names the changed symbol — the v0
+tier; `public_api` names only documented public API; `symptom_only` nothing
+below the task's `entry_points`), the repository symbols and files the report
+actually names (`surface_symbols` / `surface_files`, resolved by the report
+audit against the tree the agent sees) and whether the fix lives somewhere the
+report does not point at (`cross_module`). `difficulty` is derived from those
+facts — one point each for cross-module, hidden-only, a multi-site fix and a
+symptom-only report — rather than judged. See `evals/benchmark/schema.py` for
+every field and the invariants the loader enforces,
+`evals/benchmark/examples/example_000.json` for a complete example and
+`docs/bench-v1-design.md` for the rules.
 
 Tasks are not written by hand. A source directory holds the human parts — the
 mutation as a patch, a hidden regression test, the bug report, a few lines of
@@ -725,8 +754,8 @@ metadata — and `scripts/make_task.py` derives the rest by running the code: th
 gold patch is the exact reverse of the mutation, the localization targets come from
 the patch hunks and the AST, and `fail_to_pass` / `pass_to_pass` come from two
 sandbox runs (buggy vs. fixed, both with the hidden tests). A task whose hidden
-test does not catch the bug, or whose fix breaks an existing test, is refused. See
-`docs/benchmark-authoring.md`.
+test does not catch the bug, or whose fix breaks an existing test, or whose report
+names what its tier forbids, is refused. See `docs/benchmark-authoring.md`.
 
 ## Sandbox
 

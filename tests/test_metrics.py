@@ -81,6 +81,8 @@ def test_classification_covers_the_taxonomy(task: Task) -> None:
         (agent(), [Reason.PATCH_APPLY_FAILED], [], Failure.TOOL_FAILURE),
         (agent(edited=[gold]), [Reason.PASS_TO_PASS_REGRESSED], [], Failure.REGRESSION_INTRODUCED),
         (agent("budget_steps", read=[gold]), f2p, [], Failure.BUDGET_EXCEEDED),
+        # A budget-out run that never reached a gold file failed at localization.
+        (agent("budget_tokens", read=["README.md"]), f2p, [], Failure.RETRIEVAL_FAILURE),
         (agent(read=["README.md"]), f2p, [], Failure.RETRIEVAL_FAILURE),
         (agent(read=[gold]), f2p, [], Failure.REASONING_FAILURE),
         (agent(read=[gold], edited=["src/other.py"]), f2p, [], Failure.WRONG_LOCALIZATION),
@@ -96,6 +98,40 @@ def test_classification_covers_the_taxonomy(task: Task) -> None:
     for record, reasons, stripped, expected in cases:
         r = result(task, fail, reasons=reasons, agent=record, patch_test_files=stripped)
         assert classify_failure(task, r) is expected, (record, reasons, expected)
+
+
+def test_localization_measures_come_from_the_run_record(task: Task) -> None:
+    gold = task.gold_files[0]
+    results = [
+        result(
+            task,
+            Status.PASS,
+            agent={
+                **agent(edited=[gold], read=["README.md", gold]),
+                "first_edit_file": gold,
+                "files_read_before_first_edit": ["README.md", gold],
+            },
+            patch_bytes=10,
+        ),
+        result(
+            task,
+            Status.FAIL,
+            reasons=[Reason.FAIL_TO_PASS_FAILING],
+            agent={
+                **agent(edited=["src/other.py"], read=["src/other.py", gold]),
+                "first_edit_file": "src/other.py",
+                "files_read_before_first_edit": ["src/other.py"],
+            },
+            patch_bytes=10,
+        ),
+        result(task, Status.FAIL, reasons=[Reason.FAIL_TO_PASS_FAILING], agent=agent()),
+    ]
+    loc = agent_metrics([task], results)["localization"]
+    assert loc["runs_with_an_edit"] == 2
+    assert loc["first_edit_in_gold_file"] == 1 and loc["first_edit_in_gold_file_rate"] == 0.5
+    assert loc["gold_file_read_before_first_edit"] == 1
+    assert loc["gold_file_read"] == 2 and loc["gold_file_read_rate"] == round(2 / 3, 4)
+    assert "first edit in a gold file 1/2" in format_agent_metrics(agent_metrics([task], results))
 
 
 def test_classification_without_an_agent_record(task: Task) -> None:
@@ -141,6 +177,10 @@ def test_agent_metrics_aggregate_and_format(task: Task) -> None:
     assert metrics["failures"] == {"budget_exceeded": 1, "regression_introduced": 1}
     assert metrics["by_category"] == {str(task.category): {"pass": 1, "total": 3}}
     assert metrics["by_difficulty"] == {str(task.difficulty): {"pass": 1, "total": 3}}
+    assert metrics["by_suite"] == {"v0": {"pass": 1, "total": 3}}
+    assert metrics["by_repo"] == {task.repo_name: {"pass": 1, "total": 3}}
+    assert metrics["by_hidden_only"] == {str(task.hidden_only): {"pass": 1, "total": 3}}
+    assert set(metrics) >= {"by_cross_module", "by_report_level", "by_shape", "localization"}
 
     text = format_agent_metrics(metrics)
     assert "success 33.3%" in text and "terminations: budget_cost 1, done 2" in text

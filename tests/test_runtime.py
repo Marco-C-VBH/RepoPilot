@@ -132,6 +132,8 @@ def test_happy_path_walks_every_phase_and_verifies(tmp_path: Path) -> None:
     assert run.steps == 6 and run.tool_calls == 3 and run.invalid_tool_calls == 0
     assert run.test_runs == 2  # reproduction + one verification
     assert run.files_read == ["demo/cache.py"] and run.files_edited == ["demo/cache.py"]
+    assert run.first_edit_file == "demo/cache.py"
+    assert run.files_read_before_first_edit == ["demo/cache.py"]
     assert "+        if len(self.items) >= self.size:" in run.patch
     assert run.final_text == "Changed > to >= in Cache.put."
 

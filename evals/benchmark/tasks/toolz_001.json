@@ -87,5 +87,17 @@
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "sliding_window"
+  ],
+  "surface_files": [
+    "toolz/curried/__init__.py",
+    "toolz/itertoolz.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

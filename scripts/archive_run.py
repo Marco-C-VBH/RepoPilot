@@ -61,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
             f"task(s) · {', '.join(summary.get('configs', {}))}"
         )
         return 0
+    if summary.get("kind") == "memorization":  # scripts/memorization_probe.py output
+        print(
+            f"  memorization probe · {', '.join(summary.get('models', []))} · "
+            f"{summary.get('tasks')} task(s) · cost ${summary.get('cost_total_usd', 0):.3f}"
+        )
+        return 0
     print(
         f"  {summary['solver']} · {summary.get('model') or '-'} · {summary['tasks']} task(s) × "
         f"{summary['repeat']} · pass rate {summary['pass_rate']:.1%}"

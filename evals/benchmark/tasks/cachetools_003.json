@@ -75,10 +75,27 @@
     "LRUCache.__getitem__"
   ],
   "category": "state_management",
-  "difficulty": "medium",
+  "difficulty": "easy",
   "env": {
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "Cache.get",
+    "Cache.maxsize",
+    "LRUCache",
+    "_UnboundTTLCache.maxsize",
+    "_WrapperBase.cache"
+  ],
+  "surface_files": [
+    "src/cachetools/__init__.py",
+    "src/cachetools/_cachedmethod.py",
+    "src/cachetools/func.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

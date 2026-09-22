@@ -60,6 +60,12 @@ def test_make_task_derives_everything_from_runs(workspace: Path) -> None:
     assert task.gold_files == ["fixturepkg/__init__.py"]
     assert task.gold_symbols == ["clamp"]
     assert task.hidden_test_files == ("tests/test_hidden.py",)
+    # Bench v1: the audit fields come from the same build (the report names clamp).
+    assert task.audited and task.surface_files == ["fixturepkg/__init__.py"]
+    assert task.cross_module is False and task.hidden_only is False
+    assert task.difficulty == task.derived_difficulty == "easy"
+    assert result.audit is not None and result.audit.report.ok
+    assert result.derived is not None
     assert result.derived.excluded == {}
     assert result.derived.buggy_run.counts()["failed"] == 2
     assert result.derived.fixed_run.counts()["passed"] == 4

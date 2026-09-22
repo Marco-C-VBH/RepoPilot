@@ -86,10 +86,24 @@
     "TLRUCache.__setitem__"
   ],
   "category": "cache_invalidation",
-  "difficulty": "hard",
+  "difficulty": "easy",
   "env": {
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "TLRUCache",
+    "TLRUCache.ttu",
+    "_WrapperBase.cache"
+  ],
+  "surface_files": [
+    "src/cachetools/__init__.py",
+    "src/cachetools/_cachedmethod.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

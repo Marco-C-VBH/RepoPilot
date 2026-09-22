@@ -14,7 +14,7 @@ import pytest
 
 from evals.benchmark.authoring import SOURCES_DIR, is_test_path, load_draft
 from evals.benchmark.registry import TASKS_DIR, load_tasks
-from evals.benchmark.schema import Task, TaskSource, touched_files
+from evals.benchmark.schema import ReportLevel, Suite, Task, TaskSource, touched_files
 
 TASKS = load_tasks(TASKS_DIR)
 IDS = [t.id for t in TASKS]
@@ -41,24 +41,42 @@ def test_task_matches_its_source_directory(task: Task) -> None:
     assert draft.repo == task.repo
     assert draft.commit == task.base_commit
     assert draft.category == task.category
-    assert draft.difficulty == task.difficulty
+    assert draft.suite == task.suite
+    assert draft.report_level == task.report_level
+    assert list(draft.entry_points) == task.entry_points
+    assert draft.source == task.source
+    assert draft.fix_commit == task.fix_commit
     assert draft.test_command == task.test_command
     assert draft.env == task.env
     assert draft.description == task.description
-    assert task.source is TaskSource.MUTATION
+    if task.source is TaskSource.MUTATION:
+        assert draft.bug_patch is not None
+        assert touched_files(task.bug_patch) == touched_files(draft.bug_patch)
+    else:
+        assert draft.bug_patch is None and task.bug_patch is None
     # make_task re-exports both patches through git, so their text can differ from
     # the source files in index lines; the set of files they touch cannot.
-    assert touched_files(task.bug_patch) == touched_files(draft.bug_patch)
     assert draft.hidden_patch is not None
     assert touched_files(task.hidden_test_patch) == touched_files(draft.hidden_patch)
 
 
 @pytest.mark.parametrize("task", TASKS, ids=IDS)
+def test_task_has_been_audited_and_its_difficulty_is_derived(task: Task) -> None:
+    """docs/bench-v1-design.md §7: difficulty is a rule, not a judgement."""
+    assert task.audited, f"{task.id}: run make_task --refresh to fill the audit fields"
+    assert task.difficulty == task.derived_difficulty
+    if task.report_level is ReportLevel.SYMPTOM_ONLY:
+        assert task.entry_points
+    if task.suite is Suite.V1:
+        assert task.report_level is not ReportLevel.INTERNAL, "v1 reports name no internals"
+
+
+@pytest.mark.parametrize("task", TASKS, ids=IDS)
 def test_mutation_and_fix_touch_the_same_source_files(task: Task) -> None:
-    buggy = touched_files(task.bug_patch)
     fixed = touched_files(task.gold_patch)
-    assert buggy == fixed
-    assert not any(is_test_path(p) for p in buggy), "mutations must not touch tests"
+    if task.bug_patch is not None:
+        assert touched_files(task.bug_patch) == fixed
+    assert not any(is_test_path(p) for p in fixed), "fixes must not touch tests"
     assert set(task.gold_files) <= fixed
     assert task.gold_symbols, "make_task should have derived at least one symbol"
 

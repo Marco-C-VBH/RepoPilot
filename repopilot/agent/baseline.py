@@ -57,6 +57,7 @@ class BaselineAgent:
         edits = failed_edits = tolerant_edits = 0
         files_read: list[str] = []
         files_edited: list[str] = []
+        reads_before_first_edit: int | None = None
         final_text = ""
 
         trace.add(
@@ -101,6 +102,8 @@ class BaselineAgent:
                 edits=edits,
                 failed_edits=failed_edits,
                 tolerant_edits=tolerant_edits,
+                first_edit_file=files_edited[0] if files_edited else None,
+                files_read_before_first_edit=_unique(files_read[:reads_before_first_edit]),
             )
 
         while True:
@@ -164,6 +167,8 @@ class BaselineAgent:
                     if call.name == "read_file":
                         files_read.append(call.arguments.get("path", ""))
                     elif call.name == "edit_file":
+                        if reads_before_first_edit is None:
+                            reads_before_first_edit = len(files_read)
                         files_edited.append(call.arguments.get("path", ""))
                         edits += 1
                         tolerant_edits += result.meta.get("match") == "whitespace"
@@ -194,3 +199,13 @@ class BaselineAgent:
                 invalid=True,
             )
         return self.toolbox.call(call.name, call.arguments)
+
+
+def _unique(paths: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out

@@ -91,3 +91,41 @@ def export_tree(repo: str, commit: str, dest: Path, cache_dir: Path = DEFAULT_CA
     _git("-C", str(dest), "checkout", "--quiet", "--detach", commit)
     shutil.rmtree(dest / ".git")
     return dest
+
+
+def parent_commit(repo: str, commit: str, cache_dir: Path = DEFAULT_CACHE_DIR) -> str:
+    """The first parent of ``commit`` (a real task's base is its fix's parent)."""
+    source = resolve_source(repo, commit, cache_dir)
+    parents = _git("-C", str(source), "rev-list", "--parents", "-n", "1", commit).split()
+    if len(parents) < 2:
+        raise RepoError(f"commit {commit} has no parent")
+    if len(parents) > 2:
+        raise RepoError(f"commit {commit} is a merge; real tasks need a single-parent fix commit")
+    return parents[1]
+
+
+def diff_between(
+    repo: str,
+    base: str,
+    target: str,
+    *,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    paths: tuple[str, ...] = (),
+) -> str:
+    """``git diff base target [-- paths]`` from the repository's history."""
+    source = resolve_source(repo, target, cache_dir)
+    if not has_commit(source, base):
+        raise RepoError(f"commit {base} not found in {repo}")
+    args = ["-C", str(source), "diff", "--no-color", base, target]
+    if paths:
+        args += ["--", *paths]
+    return _git(*args)
+
+
+def changed_paths(
+    repo: str, base: str, target: str, cache_dir: Path = DEFAULT_CACHE_DIR
+) -> list[str]:
+    """Paths that differ between two commits."""
+    source = resolve_source(repo, target, cache_dir)
+    out = _git("-C", str(source), "diff", "--name-only", base, target)
+    return [line for line in out.splitlines() if line.strip()]

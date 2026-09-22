@@ -4,7 +4,9 @@ id = "toolz_003"
 repo = "https://github.com/pytoolz/toolz"
 commit = "568c2b8393973cd172a466546c9d95779c452438"
 category = "missing_check"
-difficulty = "medium"
+authored_difficulty = "medium"   # the author's estimate; the shipped difficulty is derived
+suite = "v0"
+report_level = "internal"
 test_command = "pytest toolz/tests/test_dicttoolz.py toolz/tests/test_curried.py"
 
 [env]

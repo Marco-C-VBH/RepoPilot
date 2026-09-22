@@ -4,7 +4,9 @@ id = "cachetools_002"
 repo = "https://github.com/tkem/cachetools"
 commit = "4500e3d04288738d25acbb4973eb3c3e1bf41db9"
 category = "cache_invalidation"
-difficulty = "hard"
+authored_difficulty = "hard"   # the author's estimate; the shipped difficulty is derived
+suite = "v0"
+report_level = "internal"
 test_command = "pytest tests/test_tlru.py tests/test_ttl.py"
 
 [env]

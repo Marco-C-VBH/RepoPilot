@@ -105,6 +105,9 @@ def test_happy_path_reads_edits_tests_and_stops(toolbox: Toolbox) -> None:
     assert run.test_runs == 1 and run.test_runs_refused == 0
     assert run.files_read == ["demo/cache.py"] and run.files_edited == ["demo/cache.py"]
     assert run.changed_files == ["demo/cache.py"]
+    assert run.first_edit_file == "demo/cache.py"
+    assert run.files_read_before_first_edit == ["demo/cache.py"]
+    assert run.to_record()["first_edit_file"] == "demo/cache.py"
     assert "+        if len(self.items) >= self.size:" in run.patch
     assert run.final_text.startswith("Root cause")
     assert run.ledger["cost_usd"] == pytest.approx(0.004)

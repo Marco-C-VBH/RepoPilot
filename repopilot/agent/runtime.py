@@ -24,7 +24,7 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
-from repopilot.agent.baseline import DEFAULT_MAX_OUTPUT_TOKENS
+from repopilot.agent.baseline import DEFAULT_MAX_OUTPUT_TOKENS, _unique
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget, BudgetTracker
 from repopilot.agent.context import (
     DEFAULT_CONTEXT,
@@ -137,6 +137,7 @@ class _Execution:
         self.edits = self.failed_edits = self.tolerant_edits = 0
         self.files_read: list[str] = []
         self.files_edited: list[str] = []
+        self.reads_before_first_edit: int | None = None
         self.final_text = ""
         self.last_test_output = ""
 
@@ -579,6 +580,8 @@ class _Execution:
                     if call.name == "retrieve":
                         self.state.retrieve_calls += 1
                 elif call.name == "edit_file":
+                    if self.reads_before_first_edit is None:
+                        self.reads_before_first_edit = len(self.files_read)
                     self.files_edited.append(path)
                     self.state.visit(path)
                     edits += 1
@@ -784,6 +787,8 @@ class _Execution:
             edits=self.edits,
             failed_edits=self.failed_edits,
             tolerant_edits=self.tolerant_edits,
+            first_edit_file=self.files_edited[0] if self.files_edited else None,
+            files_read_before_first_edit=_unique(self.files_read[: self.reads_before_first_edit]),
         )
 
 

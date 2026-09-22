@@ -75,5 +75,16 @@
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "memoize"
+  ],
+  "surface_files": [
+    "toolz/functoolz.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

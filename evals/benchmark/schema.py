@@ -24,6 +24,17 @@ Harness invariants enforced here rather than discovered at run time:
 * every ``gold_files`` entry is actually modified by ``gold_patch``,
 * ``fail_to_pass`` and ``pass_to_pass`` do not overlap,
 * unknown fields are rejected, so typos in task files fail loudly.
+
+Bench v1 (docs/bench-v1-design.md §7) adds the fields that make a task's
+difficulty a matter of record instead of judgement: which ``suite`` it belongs
+to, at what ``report_level`` the bug report is written (and, for symptom-only
+reports, the ``entry_points`` it may name), which repository symbols and files
+the report actually names (``surface_symbols`` / ``surface_files``, derived by
+the report audit against the tree the agent sees), whether the fix lives
+somewhere the report does not point at (``cross_module``), and the upstream
+``fix_commit`` a real task was made from.  ``hidden_only``, ``shape`` and
+``derived_difficulty`` are computed from the other fields; ``difficulty`` must
+equal the derived value once a task has been audited.
 """
 
 from __future__ import annotations
@@ -62,6 +73,8 @@ class Category(StrEnum):
     RETRY_LOGIC = "retry_logic"
     CACHE_INVALIDATION = "cache_invalidation"
     EXCEPTION_HANDLING = "exception_handling"
+    PROPAGATION = "propagation"  # v1: a value or flag accepted at one layer, lost before the next
+    ORDERING = "ordering"  # v1: wrong or unstable order, precedence, or pass sequence
     OTHER = "other"
 
 
@@ -69,6 +82,30 @@ class Difficulty(StrEnum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
+
+
+class Suite(StrEnum):
+    """Which benchmark generation added the task (docs/bench-v1-design.md §2)."""
+
+    V0 = "v0"
+    V1 = "v1"
+
+
+class ReportLevel(StrEnum):
+    """How much the bug report gives away (docs/bench-v1-design.md §6.1)."""
+
+    INTERNAL = "internal"  # names the changed symbol (v0)
+    PUBLIC_API = "public_api"  # names only documented public API a user would type
+    SYMPTOM_ONLY = "symptom_only"  # names nothing below the task's entry points
+
+
+class Shape(StrEnum):
+    """The reference fix's footprint, derived from ``gold_patch``."""
+
+    SINGLE_LINE = "single_line"  # at most one removed and one added line
+    MULTI_LINE = "multi_line"  # one hunk, several lines
+    MULTI_SITE = "multi_site"  # two or more hunks in one file
+    CROSS_FILE = "cross_file"  # hunks in two or more files
 
 
 def looks_like_unified_diff(text: str) -> bool:
@@ -105,6 +142,56 @@ def _strip_prefix(old: str, new: str) -> tuple[str, str]:
     if old_rest and new_rest and {old_prefix, new_prefix} == {"a", "b"}:
         return old_rest, new_rest
     return old, new
+
+
+class PatchShape(BaseModel):
+    """Hunks, files and changed lines of a unified diff, and the ``Shape`` they imply."""
+
+    model_config = ConfigDict(frozen=True)
+
+    hunks: int
+    files: int
+    removed_lines: int
+    added_lines: int
+
+    @property
+    def changed_lines(self) -> int:
+        return self.removed_lines + self.added_lines
+
+    @property
+    def label(self) -> Shape:
+        if self.files >= 2:
+            return Shape.CROSS_FILE
+        if self.hunks >= 2:
+            return Shape.MULTI_SITE
+        if self.removed_lines <= 1 and self.added_lines <= 1:
+            return Shape.SINGLE_LINE
+        return Shape.MULTI_LINE
+
+    @property
+    def multi_site(self) -> bool:
+        return self.label in (Shape.MULTI_SITE, Shape.CROSS_FILE)
+
+
+_CHANGE_SKIP = ("+++ ", "--- ")
+
+
+def patch_shape(patch: str) -> PatchShape:
+    """Count the hunks, files and changed lines of a unified diff."""
+    removed = added = 0
+    for line in patch.splitlines():
+        if line.startswith(_CHANGE_SKIP):
+            continue
+        if line.startswith("-"):
+            removed += 1
+        elif line.startswith("+"):
+            added += 1
+    return PatchShape(
+        hunks=len(_HUNK_RE.findall(patch)),
+        files=len(touched_files(patch)),
+        removed_lines=removed,
+        added_lines=added,
+    )
 
 
 def _check_repo_relative_path(path: str) -> str:
@@ -228,8 +315,61 @@ class Task(BaseModel):
         description="Functions/classes/methods the fix touches, e.g. 'retry_request'.",
     )
     category: Category
-    difficulty: Difficulty
+    difficulty: Difficulty = Field(
+        description=(
+            "easy / medium / hard. Derived (docs/bench-v1-design.md §7): one point each for "
+            "cross_module, hidden_only, a multi-site or cross-file fix, and a symptom_only "
+            "report; 0 -> easy, 1 -> medium, 2+ -> hard. Must equal derived_difficulty once "
+            "the report audit has filled surface_files."
+        )
+    )
     env: TaskEnv = Field(default_factory=TaskEnv)
+    suite: Suite = Field(
+        default=Suite.V0, description="Benchmark generation that added the task: v0 or v1."
+    )
+    report_level: ReportLevel = Field(
+        default=ReportLevel.INTERNAL,
+        description=(
+            "What the report may name: internal (the changed symbol; v0), public_api "
+            "(documented public API only), symptom_only (nothing below entry_points)."
+        ),
+    )
+    entry_points: list[str] = Field(
+        default_factory=list,
+        description=(
+            "symptom_only reports: the (at most three) qualified names the report may use, "
+            "e.g. 'sqlparse.format' or 'Console.print'."
+        ),
+    )
+    surface_symbols: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Repository symbols the report names, resolved by the audit against the tree the "
+            "agent sees (qualified names). Derived; empty until a task has been audited."
+        ),
+    )
+    surface_files: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Files defining surface_symbols (the entry points' files when the report names "
+            "nothing). Derived. The localization 'start' a report offers."
+        ),
+    )
+    cross_module: bool = Field(
+        default=False,
+        description=(
+            "Derived: no surface file is a gold file, so the fix lives somewhere the report "
+            "does not point at. False (unknown) until audited."
+        ),
+    )
+    fix_commit: str | None = Field(
+        default=None,
+        pattern=COMMIT_PATTERN,
+        description=(
+            "real tasks: the upstream commit the fix was taken from (base_commit is its "
+            "parent). Provenance only; never shown to the agent."
+        ),
+    )
 
     # -- field validators -------------------------------------------------
 
@@ -252,11 +392,16 @@ class Task(BaseModel):
     def _symbols_are_unique(cls, value: list[str]) -> list[str]:
         return _check_unique(value, "gold_symbols")
 
-    @field_validator("gold_files")
+    @field_validator("gold_files", "surface_files")
     @classmethod
-    def _gold_files_are_repo_relative(cls, value: list[str]) -> list[str]:
-        _check_unique(value, "gold_files")
+    def _files_are_repo_relative(cls, value: list[str]) -> list[str]:
+        _check_unique(value, "file lists")
         return [_check_repo_relative_path(p) for p in value]
+
+    @field_validator("entry_points", "surface_symbols")
+    @classmethod
+    def _names_are_unique(cls, value: list[str]) -> list[str]:
+        return _check_unique(value, "name lists")
 
     # -- cross-field validators -------------------------------------------
 
@@ -285,6 +430,35 @@ class Task(BaseModel):
             raise ValueError(f"gold_files not modified by gold_patch: {missing}")
         return self
 
+    @model_validator(mode="after")
+    def _report_level_and_entry_points_agree(self) -> Task:
+        if self.report_level is ReportLevel.SYMPTOM_ONLY and not self.entry_points:
+            raise ValueError("symptom_only reports need at least one entry point")
+        if len(self.entry_points) > 3:
+            raise ValueError("at most three entry points (docs/bench-v1-design.md §6.1)")
+        return self
+
+    @model_validator(mode="after")
+    def _fix_commit_only_for_real_tasks(self) -> Task:
+        if self.fix_commit is not None and self.source is not TaskSource.REAL:
+            raise ValueError("fix_commit is for real tasks (source == 'real')")
+        if self.fix_commit is not None and self.fix_commit == self.base_commit:
+            raise ValueError("fix_commit must differ from base_commit (its parent)")
+        return self
+
+    @model_validator(mode="after")
+    def _cross_module_matches_surface(self) -> Task:
+        if self.surface_files:
+            expected = not (set(self.surface_files) & set(self.gold_files))
+            if self.cross_module != expected:
+                raise ValueError(
+                    f"cross_module must be {expected}: surface_files {self.surface_files} "
+                    f"{'do not meet' if expected else 'meet'} gold_files {self.gold_files}"
+                )
+        elif self.cross_module:
+            raise ValueError("cross_module needs surface_files (run the report audit)")
+        return self
+
     # -- derived views ----------------------------------------------------
 
     @property
@@ -306,6 +480,64 @@ class Task(BaseModel):
     @property
     def all_tests(self) -> list[str]:
         return [*self.fail_to_pass, *self.pass_to_pass]
+
+    @property
+    def repo_name(self) -> str:
+        """The repository's short name (``.../pallets/click`` -> ``click``)."""
+        return self.repo.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+
+    @property
+    def hidden_only(self) -> bool:
+        """True when only the hidden tests catch the bug (the visible suite stays green)."""
+        hidden = set(self.hidden_test_files)
+        if not hidden:
+            return False
+        return all(nodeid.split("::", 1)[0] in hidden for nodeid in self.fail_to_pass)
+
+    @property
+    def shape(self) -> PatchShape:
+        return patch_shape(self.gold_patch)
+
+    @property
+    def derived_difficulty(self) -> Difficulty:
+        """docs/bench-v1-design.md §7: one point per hardness factor."""
+        return derive_difficulty(
+            cross_module=self.cross_module,
+            hidden_only=self.hidden_only,
+            multi_site=self.shape.multi_site,
+            symptom_only=self.report_level is ReportLevel.SYMPTOM_ONLY,
+        )
+
+    @property
+    def audited(self) -> bool:
+        """Whether the report audit has filled the derived fields."""
+        return bool(self.surface_files)
+
+    def flags(self) -> dict[str, Any]:
+        """The breakdown keys a results table can group by."""
+        return {
+            "suite": str(self.suite),
+            "repo": self.repo_name,
+            "source": str(self.source),
+            "report_level": str(self.report_level),
+            "hidden_only": self.hidden_only,
+            "cross_module": self.cross_module,
+            "shape": str(self.shape.label),
+            "category": str(self.category),
+            "difficulty": str(self.difficulty),
+        }
+
+
+def derive_difficulty(
+    *, cross_module: bool, hidden_only: bool, multi_site: bool, symptom_only: bool
+) -> Difficulty:
+    """One point per hardness factor: 0 -> easy, 1 -> medium, 2+ -> hard (§7)."""
+    points = int(cross_module) + int(hidden_only) + int(multi_site) + int(symptom_only)
+    if points == 0:
+        return Difficulty.EASY
+    if points == 1:
+        return Difficulty.MEDIUM
+    return Difficulty.HARD
 
 
 def task_json_schema() -> dict[str, Any]:

@@ -156,10 +156,28 @@
     "retry_if_exception_type._check"
   ],
   "category": "exception_handling",
-  "difficulty": "medium",
+  "difficulty": "easy",
   "env": {
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "RetryError.reraise",
+    "retry",
+    "retry_if_exception_type",
+    "stop_after_attempt",
+    "wait_none"
+  ],
+  "surface_files": [
+    "tenacity/__init__.py",
+    "tenacity/retry.py",
+    "tenacity/stop.py",
+    "tenacity/wait.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

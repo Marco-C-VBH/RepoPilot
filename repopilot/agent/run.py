@@ -64,6 +64,10 @@ class AgentRun:
     edits: int = 0  # edit_file calls that changed a file
     failed_edits: int = 0  # edit_file calls the tool refused (not found, ambiguous, test file)
     tolerant_edits: int = 0  # edits applied through the whitespace-tolerant match (2a.1)
+    # Localization measures (docs/leak-audit.md §3, made standard by Bench v1): the file
+    # of the first successful edit, and the files read before it, in order.
+    first_edit_file: str | None = None
+    files_read_before_first_edit: list[str] = field(default_factory=list)
 
     def to_record(self) -> dict[str, Any]:
         """JSON-serializable summary stored next to the verdict (results.jsonl)."""
@@ -90,6 +94,8 @@ class AgentRun:
             "edits": self.edits,
             "failed_edits": self.failed_edits,
             "tolerant_edits": self.tolerant_edits,
+            "first_edit_file": self.first_edit_file,
+            "files_read_before_first_edit": self.files_read_before_first_edit,
             "final_text": clip(self.final_text, 1000),
         }
         if self.runtime is not None:

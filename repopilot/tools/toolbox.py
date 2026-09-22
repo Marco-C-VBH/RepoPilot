@@ -186,6 +186,7 @@ class Toolbox:
     max_output_chars: int = MAX_OUTPUT_CHARS
     retrieval: RepoIndex | None = None  # attached -> the retrieve tool exists
     retrieval_config: RetrievalConfig | None = None  # defaults when None
+    disabled_tools: tuple[str, ...] = ()  # withheld from the model (leak ablation arms C, D)
 
     def __post_init__(self) -> None:
         self._index = code.SymbolIndex(self.workspace)
@@ -193,6 +194,10 @@ class Toolbox:
         self._specs = dict(_SPEC_BY_NAME)
         if self.retrieval is not None:
             self._specs[RETRIEVE_SPEC.name] = RETRIEVE_SPEC
+        for name in self.disabled_tools:
+            if name not in _SPEC_BY_NAME and name != RETRIEVE_SPEC.name:
+                raise ValueError(f"cannot disable unknown tool {name!r}")
+            self._specs.pop(name, None)
 
     def specs(self) -> list[ToolSpec]:
         return list(self._specs.values())

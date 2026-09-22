@@ -398,12 +398,13 @@ the regeneration, then required):
 
 `difficulty` becomes derived because v0's authored labels measured how much
 the *wording* gave away — the audit made that a rule instead of a judgement.
-Under the v1 rule the v0 tasks come out easy (12), medium (2: `toolz_003`
-and `toolz_004`, hidden-only) and hard (0), which is what the leak audit
-said about them. (`cachetools_005` is not cross-module by the file rule:
-`cached` is *defined* in `_cached.py`, the gold file, and only re-exported
-from `__init__`; surface files are the defining files, never the
-re-exporting ones.) The v0 `task.toml` files
+Under the v1 rule the v0 tasks come out easy (11), medium (2:
+`cachetools_005`, cross-module — `cached` is defined in `__init__.py` and the
+fix sits in `_cached.py` — and `toolz_003`, hidden-only) and hard (1:
+`toolz_004`, hidden-only with two hunks), which is what the leak audit said
+about them. Surface files are the files that *define* what the report names,
+never the ones that re-export it. (Measured 2026-09-22 by regenerating the 14
+files; the design had guessed 12 / 2 / 0 before the audit existed.) The v0 `task.toml` files
 keep the authored label as `authored_difficulty` for the record; the JSON
 carries the derived one. Regenerating the 14 v0 files changes no patch, test,
 command or description (`tests/test_benchmark_tasks.py` keeps them consistent
@@ -423,9 +424,10 @@ with their sources; the regeneration is one `bench:` commit).
    hunks as `gold_patch`, refuses if the parent's own suite is not green
    under the task command, and expects the transplanted hidden file like any
    other task. `authored_difficulty` accepted in `task.toml`.
-4. `scripts/validate_tasks.py` — the suite report: counts against §2's
-   targets per suite and repository, the audit re-run over every task,
-   `leak_scan.py`'s hidden-name scan folded in.
+4. `scripts/validate_tasks.py` — the suite report (`evals/benchmark/suite.py`):
+   counts against §2's targets per suite and repository, `--audit` to re-run
+   the report audit over every task, `--strict` for CI. The hidden-name scan
+   stays in `leak_scan.py`: it reads traces, not tasks.
 5. `evals/runner.py` — `--suite {v0,v1,v1-new}` (with `--ids` still
    available); `--report {full,redacted,generic}` applied in
    `AgentSolver.solve` before the `TaskInput` is built (generic = "There is
@@ -435,9 +437,11 @@ with their sources; the regeneration is one `bench:` commit).
    The run header and `summary.json` record all three.
 6. `evals/metrics.py` — breakdowns by `suite`, repository, `hidden_only`,
    `cross_module`, `report_level`, `shape`; `first_edit_in_gold_file` and
-   `gold_file_read_before_first_edit` per run, from the traces (the leak
-   audit's two localization measures, made standard); `classify_failure`
-   gains `localization` (no gold file ever read) ahead of `wrong_patch`.
+   `gold_file_read_before_first_edit` per run, recorded by both agents in the
+   run record (the leak audit's two localization measures, made standard);
+   `classify_failure` puts localization (`retrieval_failure`: no gold file
+   read or edited) ahead of `budget_exceeded`, so a run that ran out of
+   budget without ever reaching the gold file is counted where it failed.
 7. `scripts/memorization_probe.py` — §9.3.
 8. `scripts/retrieval_eval.py` — breakdown by suite, `report_level`,
    `cross_module`; unchanged otherwise.

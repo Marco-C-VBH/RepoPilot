@@ -153,7 +153,8 @@ def evaluate_tasks(
             )
             + f" · best {best.config}"
         )
-    summary = summarize_rows(rows, configs)
+    flags = {t.id: t.flags() for t in tasks if hasattr(t, "flags")}
+    summary = summarize_rows(rows, configs, flags=flags)
     summary.update(
         {
             "embedder": embedder.name,
@@ -179,9 +180,17 @@ def evaluate_tasks(
     return summary
 
 
+GROUP_KEYS = ("suite", "report_level", "cross_module", "hidden_only")
+
+
 def summarize_rows(
-    rows: Sequence[RetrievalRow], configs: dict[str, tuple[str, ...]] = CONFIGS
+    rows: Sequence[RetrievalRow],
+    configs: dict[str, tuple[str, ...]] = CONFIGS,
+    *,
+    flags: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Per-configuration means, and (given task ``flags``) the same per suite,
+    report tier, cross-module and hidden-only bucket (docs/bench-v1-design.md §9.4)."""
     by_config: dict[str, Any] = {}
     for name in configs:
         subset = [r.to_record() for r in rows if r.config == name]
@@ -193,7 +202,27 @@ def summarize_rows(
         stats["misses_file"] = sorted(r["task_id"] for r in subset if not r["recall10_file"])
         stats["misses_symbol"] = sorted(r["task_id"] for r in subset if not r["recall10_symbol"])
         by_config[name] = stats
-    return {"kind": "retrieval", "configs": by_config}
+    summary: dict[str, Any] = {"kind": "retrieval", "configs": by_config}
+    if flags:
+        groups: dict[str, Any] = {}
+        for key in GROUP_KEYS:
+            values = sorted({str(f.get(key)) for f in flags.values() if key in f})
+            if len(values) < 2:
+                continue
+            groups[key] = {}
+            for value in values:
+                ids = {tid for tid, f in flags.items() if str(f.get(key)) == value}
+                per_config: dict[str, Any] = {}
+                for name in configs:
+                    subset = [r.to_record() for r in rows if r.config == name and r.task_id in ids]
+                    if subset:
+                        stats = summarize(subset, ("recall5_file", "recall10_file", "mrr_file"))
+                        stats["tasks"] = len(subset)
+                        per_config[name] = stats
+                groups[key][value] = per_config
+        if groups:
+            summary["by_group"] = groups
+    return summary
 
 
 def format_summary(summary: dict[str, Any]) -> str:
@@ -210,6 +239,15 @@ def format_summary(summary: dict[str, Any]) -> str:
         )
         if stats["misses_file"]:
             lines.append(f"{'':<20} file misses: {', '.join(stats['misses_file'])}")
+    for key, values in (summary.get("by_group") or {}).items():
+        lines.append(f"by {key}:")
+        for value, per_config in values.items():
+            parts = [
+                f"{name} R@10 {st['recall10_file']:.2f} MRR {st['mrr_file']:.2f}"
+                for name, st in per_config.items()
+            ]
+            n = next((st["tasks"] for st in per_config.values()), 0)
+            lines.append(f"  {value:<14} ({n:>2} task(s)) " + " · ".join(parts))
     lines.append(
         f"embedder {summary.get('embedder')} · {summary.get('chunks_total')} chunks over "
         f"{summary.get('tasks')} task(s) · index build {summary.get('index_build_seconds_total')}s "

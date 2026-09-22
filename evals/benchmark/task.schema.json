@@ -10,6 +10,8 @@
         "retry_logic",
         "cache_invalidation",
         "exception_handling",
+        "propagation",
+        "ordering",
         "other"
       ],
       "title": "Category",
@@ -22,6 +24,25 @@
         "hard"
       ],
       "title": "Difficulty",
+      "type": "string"
+    },
+    "ReportLevel": {
+      "description": "How much the bug report gives away (docs/bench-v1-design.md \u00a76.1).",
+      "enum": [
+        "internal",
+        "public_api",
+        "symptom_only"
+      ],
+      "title": "ReportLevel",
+      "type": "string"
+    },
+    "Suite": {
+      "description": "Which benchmark generation added the task (docs/bench-v1-design.md \u00a72).",
+      "enum": [
+        "v0",
+        "v1"
+      ],
+      "title": "Suite",
       "type": "string"
     },
     "TaskEnv": {
@@ -178,10 +199,65 @@
       "$ref": "#/$defs/Category"
     },
     "difficulty": {
-      "$ref": "#/$defs/Difficulty"
+      "$ref": "#/$defs/Difficulty",
+      "description": "easy / medium / hard. Derived (docs/bench-v1-design.md \u00a77): one point each for cross_module, hidden_only, a multi-site or cross-file fix, and a symptom_only report; 0 -> easy, 1 -> medium, 2+ -> hard. Must equal derived_difficulty once the report audit has filled surface_files."
     },
     "env": {
       "$ref": "#/$defs/TaskEnv"
+    },
+    "suite": {
+      "$ref": "#/$defs/Suite",
+      "default": "v0",
+      "description": "Benchmark generation that added the task: v0 or v1."
+    },
+    "report_level": {
+      "$ref": "#/$defs/ReportLevel",
+      "default": "internal",
+      "description": "What the report may name: internal (the changed symbol; v0), public_api (documented public API only), symptom_only (nothing below entry_points)."
+    },
+    "entry_points": {
+      "description": "symptom_only reports: the (at most three) qualified names the report may use, e.g. 'sqlparse.format' or 'Console.print'.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Entry Points",
+      "type": "array"
+    },
+    "surface_symbols": {
+      "description": "Repository symbols the report names, resolved by the audit against the tree the agent sees (qualified names). Derived; empty until a task has been audited.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Surface Symbols",
+      "type": "array"
+    },
+    "surface_files": {
+      "description": "Files defining surface_symbols (the entry points' files when the report names nothing). Derived. The localization 'start' a report offers.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Surface Files",
+      "type": "array"
+    },
+    "cross_module": {
+      "default": false,
+      "description": "Derived: no surface file is a gold file, so the fix lives somewhere the report does not point at. False (unknown) until audited.",
+      "title": "Cross Module",
+      "type": "boolean"
+    },
+    "fix_commit": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "real tasks: the upstream commit the fix was taken from (base_commit is its parent). Provenance only; never shown to the agent.",
+      "title": "Fix Commit"
     }
   },
   "required": [

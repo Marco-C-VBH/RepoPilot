@@ -4,7 +4,9 @@ id = "tenacity_002"
 repo = "https://github.com/jd/tenacity"
 commit = "a2af454834c6bb5a1e39d67334031cdaf0f475b5"
 category = "retry_logic"
-difficulty = "medium"
+authored_difficulty = "medium"   # the author's estimate; the shipped difficulty is derived
+suite = "v0"
+report_level = "internal"
 test_command = "pytest tests/test_tenacity.py"
 
 [env]

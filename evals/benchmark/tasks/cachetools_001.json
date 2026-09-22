@@ -79,10 +79,25 @@
     "TTLCache.expire"
   ],
   "category": "cache_invalidation",
-  "difficulty": "medium",
+  "difficulty": "easy",
   "env": {
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "Cache.currsize",
+    "TLRUCache.expire",
+    "TTLCache",
+    "TTLCache.expire",
+    "_TimedCache.expire"
+  ],
+  "surface_files": [
+    "src/cachetools/__init__.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

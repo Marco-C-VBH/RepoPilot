@@ -156,10 +156,22 @@
     "wait_chain.__call__"
   ],
   "category": "missing_check",
-  "difficulty": "medium",
+  "difficulty": "easy",
   "env": {
     "python": "3.11",
     "install": "pip install -e .",
     "test_timeout_seconds": 300
-  }
+  },
+  "suite": "v0",
+  "report_level": "internal",
+  "entry_points": [],
+  "surface_symbols": [
+    "wait_chain",
+    "wait_fixed"
+  ],
+  "surface_files": [
+    "tenacity/wait.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
 }

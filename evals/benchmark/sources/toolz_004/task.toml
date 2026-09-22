@@ -4,7 +4,9 @@ id = "toolz_004"
 repo = "https://github.com/pytoolz/toolz"
 commit = "568c2b8393973cd172a466546c9d95779c452438"
 category = "state_management"
-difficulty = "hard"
+authored_difficulty = "hard"   # the author's estimate; the shipped difficulty is derived
+suite = "v0"
+report_level = "internal"
 test_command = "pytest toolz/tests/test_functoolz.py toolz/tests/test_curried.py"
 
 [env]

@@ -507,6 +507,25 @@ def test_offline_evaluation_scores_every_configuration(tmp_path: Path) -> None:
     text = offline.format_summary(summary)
     assert text.splitlines()[1].startswith("bm25 ") and "embedder hash-64" in text
 
+    # Bench v1 breakdowns (§9.4): the same rows grouped by the task flags.
+    other = [
+        offline.RetrievalRow(**{**r.to_record(), "task_id": "demo_002", "recall10_file": 0.0})
+        for r in rows
+    ]
+    flags = {
+        "demo_001": {"suite": "v0", "report_level": "internal", "cross_module": False},
+        "demo_002": {"suite": "v1", "report_level": "symptom_only", "cross_module": True},
+    }
+    grouped = offline.summarize_rows([*rows, *other], flags=flags)
+    assert set(grouped["by_group"]) == {"suite", "report_level", "cross_module"}
+    assert grouped["by_group"]["suite"]["v0"]["bm25"]["recall10_file"] == 1.0
+    assert grouped["by_group"]["suite"]["v1"]["bm25"]["recall10_file"] == 0.0
+    assert grouped["by_group"]["cross_module"]["True"]["bm25"]["tasks"] == 1
+    grouped.update(embedder="hash-64", chunks_total=11, tasks=2, embedded_total=11)
+    grouped["index_build_seconds_total"] = 0.0
+    assert "by suite:" in offline.format_summary(grouped)
+    assert "by_group" not in offline.summarize_rows(rows, flags={"demo_001": flags["demo_001"]})
+
     from scripts import retrieval_eval
 
     args = retrieval_eval.build_parser().parse_args(["--embedder", "hash", "--k", "5"])

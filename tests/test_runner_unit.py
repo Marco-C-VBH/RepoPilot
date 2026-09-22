@@ -132,6 +132,66 @@ def test_build_solver_checks_keys_for_the_baseline(
     assert solver.model == "gpt-5.6-luna" and solver.budget.max_steps == 7
 
 
+def test_leak_ablation_switches_reach_the_solver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """docs/bench-v1-design.md §9.2: --report and --no-run-tests are per-run switches."""
+    from evals.solvers import BaselineSolver, StructuredSolver
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    parser = runner.build_parser()
+    args = parser.parse_args(
+        [
+            "--solver",
+            "baseline",
+            "--model",
+            "gpt-5.6-luna",
+            "--env-file",
+            "x",
+            "--report",
+            "redacted",
+            "--no-run-tests",
+        ]
+    )
+    solver = runner.build_solver(args)
+    assert isinstance(solver, BaselineSolver)
+    assert solver.report == "redacted" and solver.run_tests is False
+    args = parser.parse_args(
+        [
+            "--solver",
+            "structured",
+            "--model",
+            "gpt-5.6-luna",
+            "--env-file",
+            "x",
+            "--report",
+            "generic",
+            "--no-run-tests",
+        ]
+    )
+    solver = runner.build_solver(args)  # warns; the runtime owns its tests
+    assert isinstance(solver, StructuredSolver) and solver.report == "generic"
+    assert not hasattr(solver, "run_tests")
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--report", "loud"])
+
+
+def test_select_suite_splits_v0_from_v1_new() -> None:
+    from evals.benchmark.registry import load_tasks
+
+    tasks = load_tasks(EXAMPLES)
+    assert runner.select_suite(tasks, None) == tasks
+    assert runner.select_suite(tasks, "v1") == tasks
+    assert runner.select_suite(tasks, "v0") == [t for t in tasks if t.suite == "v0"]
+    assert runner.select_suite(tasks, "v1-new") == [t for t in tasks if t.suite == "v1"]
+    with pytest.raises(ValueError, match="unknown suite"):
+        runner.select_suite(tasks, "v2")
+
+
+def test_list_shows_suite_and_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    assert runner.main(["--tasks", str(EXAMPLES), "--list", "--suite", "v0"]) == 0
+    out = capsys.readouterr().out
+    assert "example_000" in out and " v0 " in out and "internal" in out
+
+
 def test_archive_run_copies_summary_results_and_traces(tmp_path: Path) -> None:
     from scripts.archive_run import archive
 

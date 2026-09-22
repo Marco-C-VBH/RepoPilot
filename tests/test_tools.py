@@ -435,6 +435,19 @@ def test_toolbox_dispatch_validates_arguments(workspace: Workspace) -> None:
     assert box.call("run_tests", {}).is_error and "no sandbox" in box.call("run_tests", {}).output
 
 
+def test_toolbox_can_withhold_a_tool(workspace: Workspace) -> None:
+    """Leak ablation arms C and D: the baseline without run_tests (bench-v1-design.md §9.2)."""
+    box = Toolbox(
+        workspace, sandbox=None, test_command="pytest tests", disabled_tools=("run_tests",)
+    )
+    assert "run_tests" not in [spec.name for spec in box.specs()]
+    refused = box.call("run_tests", {})
+    assert refused.is_error and refused.meta.get("invalid") and "unknown tool" in refused.output
+    assert box.call("read_file", {"path": "demo/cache.py", "end": 1}).output  # the rest works
+    with pytest.raises(ValueError, match="unknown tool"):
+        Toolbox(workspace, sandbox=None, test_command="pytest", disabled_tools=("shell",))
+
+
 def test_toolbox_clips_long_outputs(workspace: Workspace) -> None:
     box = Toolbox(workspace, sandbox=None, test_command="pytest", max_output_chars=80)
     result = box.call("read_file", {"path": "demo/cache.py"})

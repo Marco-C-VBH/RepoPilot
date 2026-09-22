@@ -24,8 +24,8 @@ from evals.judge import Reason, Status
 
 class Failure(StrEnum):
     ENVIRONMENT_FAILURE = "environment_failure"  # harness / sandbox / provider outage
-    BUDGET_EXCEEDED = "budget_exceeded"  # ran out of steps, tool calls, tokens, cost or time
-    RETRIEVAL_FAILURE = "retrieval_failure"  # never read or edited a gold file
+    BUDGET_EXCEEDED = "budget_exceeded"  # ran out of budget after reaching a gold file
+    RETRIEVAL_FAILURE = "retrieval_failure"  # localization: never read or edited a gold file
     REASONING_FAILURE = "reasoning_failure"  # read a gold file but made no edit at all
     WRONG_LOCALIZATION = "wrong_localization"  # edited files, none of them a gold file
     INCORRECT_PATCH = "incorrect_patch"  # edited a gold file; tests still fail
@@ -53,12 +53,14 @@ def classify_failure(task: Task, result: TaskResult) -> Failure | None:
         return Failure.TOOL_FAILURE
     if Reason.PASS_TO_PASS_REGRESSED in reasons:
         return Failure.REGRESSION_INTRODUCED
-    if termination.startswith("budget_"):
-        return Failure.BUDGET_EXCEEDED
 
     gold = set(task.gold_files)
     edited = set(agent.get("files_edited", [])) | set(agent.get("changed_files", []))
     read = set(agent.get("files_read", []))
+    if termination.startswith("budget_"):
+        # A run that never reached a gold file failed at localization, whatever
+        # ended it (docs/bench-v1-design.md §8, §9.6); the budget is the symptom.
+        return Failure.RETRIEVAL_FAILURE if not gold & (read | edited) else Failure.BUDGET_EXCEEDED
     if result.patch_test_files and not edited - set(result.patch_test_files):
         return Failure.TEST_MISUNDERSTANDING
     if not edited:
@@ -105,8 +107,8 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
     solve_times = [float(r.durations.get("solve", 0.0)) for r in with_agent]
 
     failures = Counter()
-    by_category: dict[str, Counter] = {}
-    by_difficulty: dict[str, Counter] = {}
+    buckets: dict[str, dict[str, Counter]] = {key: {} for key in BREAKDOWNS}
+    localization = Counter()
     for r in with_agent:
         task = by_id.get(r.task_id)
         if task is None:
@@ -114,13 +116,20 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
         failure = r.failure or (str(classify_failure(task, r) or "") or None)
         if failure:
             failures[failure] += 1
-        for bucket, key in (
-            (by_category, str(task.category)),
-            (by_difficulty, str(task.difficulty)),
-        ):
-            counter = bucket.setdefault(key, Counter())
+        flags = task.flags()
+        for key in BREAKDOWNS:
+            counter = buckets[key].setdefault(str(flags[key]), Counter())
             counter["total"] += 1
             counter["pass"] += r.status is Status.PASS
+        agent = r.agent or {}
+        gold = set(task.gold_files)
+        first_edit = agent.get("first_edit_file")
+        if first_edit is not None:
+            localization["edited"] += 1
+            localization["first_edit_in_gold_file"] += first_edit in gold
+            before = set(agent.get("files_read_before_first_edit", []))
+            localization["gold_file_read_before_first_edit"] += bool(before & gold)
+        localization["gold_file_read"] += bool(gold & set(agent.get("files_read", [])))
 
     n = len(with_agent)
     metrics = {
@@ -147,19 +156,44 @@ def agent_metrics(tasks: Sequence[Task], results: Sequence[TaskResult]) -> dict[
         "solve_p50_seconds": round(_percentile(solve_times, 0.5), 1),
         "solve_p95_seconds": round(_percentile(solve_times, 0.95), 1),
         "failures": dict(sorted(failures.items())),
-        "by_category": {
-            k: {"pass": int(v["pass"]), "total": int(v["total"])}
-            for k, v in sorted(by_category.items())
+        "localization": {
+            "runs_with_an_edit": int(localization["edited"]),
+            "first_edit_in_gold_file": int(localization["first_edit_in_gold_file"]),
+            "gold_file_read_before_first_edit": int(
+                localization["gold_file_read_before_first_edit"]
+            ),
+            "gold_file_read": int(localization["gold_file_read"]),
+            "first_edit_in_gold_file_rate": (
+                round(localization["first_edit_in_gold_file"] / localization["edited"], 4)
+                if localization["edited"]
+                else 0.0
+            ),
+            "gold_file_read_rate": round(localization["gold_file_read"] / n, 4),
         },
-        "by_difficulty": {
-            k: {"pass": int(v["pass"]), "total": int(v["total"])}
-            for k, v in sorted(by_difficulty.items())
+        **{
+            f"by_{key}": {
+                k: {"pass": int(v["pass"]), "total": int(v["total"])}
+                for k, v in sorted(buckets[key].items())
+            }
+            for key in BREAKDOWNS
         },
     }
     runtime = runtime_metrics(records)
     if runtime:
         metrics["runtime"] = runtime
     return metrics
+
+
+BREAKDOWNS = (
+    "category",
+    "difficulty",
+    "suite",
+    "repo",
+    "report_level",
+    "hidden_only",
+    "cross_module",
+    "shape",
+)
 
 
 RUNTIME_COUNTERS = (
@@ -237,11 +271,18 @@ def format_agent_metrics(metrics: dict[str, Any]) -> str:
             "  steps by phase: "
             + ", ".join(f"{k} {v}" for k, v in runtime["steps_by_phase"].items())
         )
-    for label, buckets in (
-        ("category", metrics["by_category"]),
-        ("difficulty", metrics["by_difficulty"]),
-    ):
-        if buckets:
+    loc = metrics.get("localization")
+    if loc:
+        lines.append(
+            f"  localization: first edit in a gold file {loc['first_edit_in_gold_file']}/"
+            f"{loc['runs_with_an_edit']} · gold file read before the first edit "
+            f"{loc['gold_file_read_before_first_edit']}/{loc['runs_with_an_edit']} · "
+            f"gold file read at all {loc['gold_file_read']}/{m['results']}"
+        )
+    for label in BREAKDOWNS:
+        buckets = metrics.get(f"by_{label}") or {}
+        # Single-bucket breakdowns say nothing; category and difficulty always print.
+        if buckets and (len(buckets) > 1 or label in ("category", "difficulty")):
             lines.append(
                 f"  by {label}: "
                 + ", ".join(f"{k} {v['pass']}/{v['total']}" for k, v in buckets.items())

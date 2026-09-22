@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -11,15 +12,23 @@ import pytest
 
 from evals.benchmark.authoring import (
     AuthoringError,
+    audit_draft,
     changed_lines,
     enclosing_symbols,
     init_draft,
     is_test_path,
     load_draft,
     normalize,
+    refresh_task,
 )
-from evals.benchmark.schema import Category, Difficulty
-from tests.fixture_repo import BUG_PATCH, HIDDEN_TEST_PATCH, create_fixture_repo
+from evals.benchmark.schema import Category, Difficulty, ReportLevel, Suite, TaskSource
+from tests.fixture_repo import (
+    BUG_PATCH,
+    HIDDEN_TEST_PATCH,
+    create_fixture_repo,
+    fixture_task_dict,
+)
+from tests.gitfixtures import commit_all
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -152,7 +161,10 @@ def test_load_draft_reads_everything(tmp_path: Path, fixture_repo: tuple[Path, s
     assert draft.id == "fixture_001"
     assert draft.commit == sha
     assert draft.category is Category.OFF_BY_ONE
-    assert draft.difficulty is Difficulty.EASY
+    assert draft.authored_difficulty is Difficulty.EASY  # `difficulty` is the pre-v1 spelling
+    assert draft.source is TaskSource.MUTATION
+    assert draft.suite is Suite.V0 and draft.report_level is ReportLevel.INTERNAL
+    assert draft.entry_points == () and draft.fix_commit is None
     assert draft.env.install == "true" and draft.env.test_timeout_seconds == 120
     assert draft.description.startswith("clamp(15, 0, 10)")
     assert draft.bug_patch == BUG_PATCH and draft.hidden_patch == HIDDEN_TEST_PATCH
@@ -282,6 +294,205 @@ def test_normalize_rejects_patch_that_does_not_apply(
         normalize(draft, cache_dir=tmp_path / "cache")
 
 
+def test_normalize_captures_what_the_audit_needs(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, sha = fixture_repo
+    draft = load_draft(write_source(tmp_path / "src", repo, sha))
+    patches = normalize(draft, cache_dir=tmp_path / "cache")
+    assert {s.qualname for s in patches.symbols} >= {"clamp", "test_inside"}
+    assert "high - 1" in patches.gold_texts["fixturepkg/__init__.py"]  # the buggy side
+    assert "fixturepkg/__init__.py" in patches.tree_files
+    assert patches.changelog is None
+
+
+# -- the audit ----------------------------------------------------------------------
+
+
+def test_audit_draft_passes_an_internal_report_and_records_the_surface(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, sha = fixture_repo
+    draft = load_draft(write_source(tmp_path / "src", repo, sha))
+    patches = normalize(draft, cache_dir=tmp_path / "cache")
+    audit = audit_draft(draft, patches)
+    assert audit.report.ok
+    assert audit.report.surface_symbols == ("clamp",)
+    assert audit.report.surface_files == ("fixturepkg/__init__.py",)
+    assert audit.report.cross_module is False  # the report names the changed function
+
+
+def _toml_with(*extra: str) -> str:
+    """TASK_TOML with top-level keys added above the [env] table."""
+    return TASK_TOML.replace("\n[env]", "\n" + "\n".join(extra) + "\n\n[env]")
+
+
+PUBLIC_API_TOML = _toml_with('suite = "v1"', 'report_level = "public_api"')
+
+
+def test_audit_draft_refuses_a_public_api_report_naming_the_changed_symbol(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, sha = fixture_repo
+    source = write_source(
+        tmp_path / "src",
+        repo,
+        sha,
+        toml=PUBLIC_API_TOML.format(id="fixture_001", repo=repo, commit=sha),
+    )
+    draft = load_draft(source)
+    patches = normalize(draft, cache_dir=tmp_path / "cache")
+    audit = audit_draft(draft, patches)
+    assert not audit.report.ok
+    assert any("changed symbol: 'clamp'" in v for v in audit.report.violations)
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    shipped = fixture_task_dict(repo, sha)
+    shipped["description"] = draft.description
+    (tasks_dir / "fixture_001.json").write_text(json.dumps(shipped))
+    with pytest.raises(AuthoringError, match="violates its tier"):
+        refresh_task(source, out_dir=tasks_dir, cache_dir=tmp_path / "cache")
+
+
+def test_load_draft_checks_the_v1_keys(tmp_path: Path, fixture_repo: tuple[Path, str]) -> None:
+    repo, sha = fixture_repo
+    toml = _toml_with('suite = "v1"', 'report_level = "symptom_only"')
+    source = write_source(
+        tmp_path / "src", repo, sha, toml=toml.format(id="fixture_001", repo=repo, commit=sha)
+    )
+    with pytest.raises(AuthoringError, match="needs entry_points"):
+        load_draft(source)
+    toml = _toml_with('suite = "v1"', 'report_level = "symptom_only"', 'entry_points = ["clamp"]')
+    (source / "task.toml").write_text(toml.format(id="fixture_001", repo=repo, commit=sha))
+    draft = load_draft(source)
+    assert draft.suite is Suite.V1 and draft.report_level is ReportLevel.SYMPTOM_ONLY
+    assert draft.entry_points == ("clamp",)
+    toml = _toml_with('fix_commit = "' + "c" * 40 + '"')
+    (source / "task.toml").write_text(toml.format(id="fixture_001", repo=repo, commit=sha))
+    with pytest.raises(AuthoringError, match="fix_commit is for real tasks"):
+        load_draft(source)
+
+
+# -- real tasks ---------------------------------------------------------------------
+
+
+REAL_TOML = """\
+id = "{id}"
+repo = "{repo}"
+commit = "{commit}"
+source = "real"
+fix_commit = "{fix}"
+category = "off_by_one"
+suite = "v1"
+report_level = "public_api"
+test_command = "pytest tests"
+
+[env]
+python = "3.11"
+install = "true"
+test_timeout_seconds = 120
+"""
+
+
+def _fix_the_fixture(repo: Path) -> tuple[str, str]:
+    """Commit the bug into the fixture repo, then commit the fix with its test: (buggy, fix)."""
+    buggy_src = (repo / "fixturepkg" / "__init__.py").read_text().replace("high))", "high - 1))")
+    buggy = commit_all(repo, {"fixturepkg/__init__.py": buggy_src}, "introduce the bug")
+    fixed_src = buggy_src.replace("high - 1))", "high))")
+    fix = commit_all(
+        repo,
+        {
+            "fixturepkg/__init__.py": fixed_src,
+            "CHANGES.md": "- fix clamp upper bound\n",
+            "tests/test_clamp.py": (repo / "tests" / "test_clamp.py").read_text()
+            + "\n\ndef test_upper_bound_inclusive():\n    assert clamp(10, 0, 10) == 10\n",
+        },
+        "fix the upper bound",
+    )
+    return buggy, fix
+
+
+def test_normalize_derives_a_real_task_from_its_fix_commit(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, _ = fixture_repo
+    buggy, fix = _fix_the_fixture(repo)
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "task.toml").write_text(
+        REAL_TOML.format(id="fixture_002", repo=repo, commit=buggy, fix=fix)
+    )
+    (source / "hidden.patch").write_text(HIDDEN_TEST_PATCH)
+    (source / "description.md").write_text("Clamping 10 into [0, 10] gives 9.\n")
+    draft = load_draft(source)
+    assert draft.source is TaskSource.REAL and draft.bug_patch is None
+    patches = normalize(draft, cache_dir=tmp_path / "cache")
+    assert patches.bug_patch is None
+    assert patches.gold_files == ("fixturepkg/__init__.py",)  # tests and CHANGES.md excluded
+    assert "+    return max(low, min(value, high))" in patches.gold_patch
+    assert patches.gold_symbols == ("clamp",)
+    assert patches.changelog == "- fix clamp upper bound\n" or patches.changelog is None
+    audit = audit_draft(draft, patches)
+    assert audit.report.ok and audit.report.cross_module is False or audit.report.cross_module
+
+
+def test_normalize_rejects_a_real_task_whose_commit_is_not_the_fix_parent(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, base = fixture_repo
+    _, fix = _fix_the_fixture(repo)
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "task.toml").write_text(
+        REAL_TOML.format(id="fixture_002", repo=repo, commit=base, fix=fix)
+    )
+    (source / "hidden.patch").write_text(HIDDEN_TEST_PATCH)
+    (source / "description.md").write_text("Clamping 10 into [0, 10] gives 9.\n")
+    with pytest.raises(AuthoringError, match="must be the fix's parent"):
+        normalize(load_draft(source), cache_dir=tmp_path / "cache")
+
+
+# -- refresh (no Docker) ------------------------------------------------------------
+
+
+def test_refresh_task_rederives_the_audit_fields_and_keeps_the_test_lists(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, sha = fixture_repo
+    source = write_source(tmp_path / "src", repo, sha)
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    shipped = fixture_task_dict(repo, sha)
+    shipped["description"] = (source / "description.md").read_text().strip()
+    shipped["difficulty"] = "hard"  # the authored label of a pre-v1 file
+    (tasks_dir / "fixture_001.json").write_text(json.dumps(shipped))
+    result = refresh_task(source, out_dir=tasks_dir, cache_dir=tmp_path / "cache")
+    task = result.task
+    assert task.fail_to_pass == shipped["fail_to_pass"]
+    assert task.pass_to_pass == shipped["pass_to_pass"]
+    assert task.gold_patch == shipped["gold_patch"]  # the sandbox-derived text is kept
+    assert task.surface_files == ["fixturepkg/__init__.py"]
+    assert task.cross_module is False and task.hidden_only is False
+    assert task.difficulty is Difficulty.EASY  # derived: no hardness factor
+    assert task.suite is Suite.V0 and task.report_level is ReportLevel.INTERNAL
+    assert json.loads((tasks_dir / "fixture_001.json").read_text())["difficulty"] == "easy"
+    assert result.derived is None and result.image is None
+
+
+def test_refresh_task_refuses_when_the_fix_changed(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, sha = fixture_repo
+    source = write_source(tmp_path / "src", repo, sha)
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    shipped = fixture_task_dict(repo, sha)
+    shipped["description"] = "a different report"
+    (tasks_dir / "fixture_001.json").write_text(json.dumps(shipped))
+    with pytest.raises(AuthoringError, match="re-derived with make_task"):
+        refresh_task(source, out_dir=tasks_dir, cache_dir=tmp_path / "cache")
+
+
 # -- templates and CLI --init ------------------------------------------------------
 
 
@@ -289,8 +500,18 @@ def test_init_draft_writes_templates_once(tmp_path: Path) -> None:
     target = tmp_path / "sources" / "demo_001"
     first = init_draft(target, task_id="demo_001", repo="https://x/y", commit="a" * 40)
     assert {p.name for p in first} == {"task.toml", "description.md"}
-    assert 'id = "demo_001"' in (target / "task.toml").read_text()
+    toml = (target / "task.toml").read_text()
+    assert 'id = "demo_001"' in toml
+    assert 'suite = "v1"' in toml and 'report_level = "public_api"' in toml
+    assert "source =" not in toml
     assert init_draft(target, task_id="demo_001", repo="https://x/y", commit="a" * 40) == []
+
+
+def test_init_draft_for_a_real_task(tmp_path: Path) -> None:
+    target = tmp_path / "sources" / "demo_009"
+    init_draft(target, task_id="demo_009", repo="https://x/y", commit="a" * 40, fix_commit="b" * 40)
+    toml = (target / "task.toml").read_text()
+    assert 'source = "real"' in toml and f'fix_commit = "{"b" * 40}"' in toml
 
 
 def test_make_task_cli_init(tmp_path: Path) -> None:

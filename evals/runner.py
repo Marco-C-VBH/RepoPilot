@@ -6,6 +6,7 @@
     python -m evals.runner --solver gold --ids cachetools_001 cachetools_002
     python -m evals.runner --solver baseline --model claude-sonnet-5 --max-run-cost 10
     python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10
+    python -m evals.runner --solver baseline --suite v1-new --report redacted --no-run-tests
     python -m evals.runner --list
 
 Each run writes ``results/<solver>-<timestamp>-<id>/`` containing
@@ -34,11 +35,19 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from evals.benchmark.registry import TASKS_DIR, TaskLoadError, load_tasks
-from evals.benchmark.schema import Task
+from evals.benchmark.schema import Suite, Task
 from evals.harness import TaskResult, run_task
 from evals.judge import Status
 from evals.metrics import agent_metrics, classify_failure, format_agent_metrics
-from evals.solvers import AGENT_SOLVERS, SOLVERS, AgentSolver, Solver, get_solver
+from evals.solvers import (
+    AGENT_SOLVERS,
+    REPORT_MODES,
+    SOLVERS,
+    AgentSolver,
+    BaselineSolver,
+    Solver,
+    get_solver,
+)
 from repopilot.agent.budget import DEFAULT_BUDGET, AgentBudget
 from repopilot.models.config import (
     ConfigError,
@@ -71,8 +80,25 @@ class RunSummary(BaseModel):
     budget: dict[str, object] | None = None
     context: str | None = None  # structured solver: full | compact (spec §12.3)
     retrieval: dict[str, object] | None = None  # structured solver: Phase 3 configuration
+    suite: str | None = None  # v0 | v1 | v1-new (docs/bench-v1-design.md §2), None for all
+    report: str | None = None  # full | redacted | generic (leak ablation, §9.2)
+    run_tests_tool: bool | None = None  # baseline: whether the model had run_tests
     agent: dict[str, object] | None = None
     stopped_early: str | None = None  # why the run ended before every task ran
+
+
+SUITES = ("v0", "v1", "v1-new")
+
+
+def select_suite(tasks: list[Task], suite: str | None) -> list[Task]:
+    """``v0``: the original tasks; ``v1``: the whole benchmark; ``v1-new``: tasks added in v1."""
+    if suite is None or suite == "v1":
+        return list(tasks)
+    if suite == "v0":
+        return [t for t in tasks if t.suite is Suite.V0]
+    if suite == "v1-new":
+        return [t for t in tasks if t.suite is Suite.V1]
+    raise ValueError(f"unknown suite {suite!r}; choose from {SUITES}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--tasks", type=Path, default=TASKS_DIR, help="directory of <id>.json task files"
     )
     parser.add_argument("--ids", nargs="*", metavar="ID", help="run only these task ids")
+    parser.add_argument(
+        "--suite",
+        choices=SUITES,
+        help="v0 (the original 14), v1 (the whole benchmark) or v1-new (tasks added in v1); "
+        "default: every task in the directory",
+    )
     parser.add_argument("--solver", choices=sorted(SOLVERS), default="null")
     parser.add_argument("--out", type=Path, default=Path("results"), help="results root")
     parser.add_argument("--repeat", type=int, default=1, help="run every task N times")
@@ -150,6 +182,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="USD cap for the whole run: stop starting tasks once the estimated spend passes it",
     )
+    agent.add_argument(
+        "--report",
+        choices=REPORT_MODES,
+        default="full",
+        help="leak ablation: full (the bug report), redacted (repository symbols replaced by "
+        "placeholders, arm B′) or generic ('there is one injected bug', arm D)",
+    )
+    agent.add_argument(
+        "--no-run-tests",
+        action="store_true",
+        help="baseline solver only: withhold the run_tests tool (arms C and D)",
+    )
     agent.add_argument("--env-file", default=".env", help="where API keys are loaded from")
     return parser
 
@@ -167,7 +211,15 @@ def budget_from_args(args: argparse.Namespace) -> AgentBudget:
 
 def list_tasks(tasks: list[Task], tasks_dir: Path) -> None:
     for task in tasks:
-        print(f"{task.id:<24} {task.source:<9} {task.category:<20} {task.difficulty}")
+        flags = []
+        if task.hidden_only:
+            flags.append("hidden-only")
+        if task.cross_module:
+            flags.append("cross-module")
+        print(
+            f"{task.id:<24} {task.suite:<3} {task.source:<9} {task.category:<20} "
+            f"{task.difficulty:<7} {task.report_level:<13} {' '.join(flags)}"
+        )
     print(f"{len(tasks)} task(s) selected from {tasks_dir}")
 
 
@@ -180,6 +232,7 @@ def run_benchmark(
     rebuild: bool = False,
     cache_dir: Path = DEFAULT_CACHE_DIR,
     max_run_cost: float | None = None,
+    suite: str | None = None,
 ) -> tuple[RunSummary, list[TaskResult]]:
     if isinstance(solver, str):
         solver = get_solver(solver)
@@ -208,6 +261,8 @@ def run_benchmark(
                 if getattr(solver, "retrieval", "none") != "none"
                 else ""
             )
+            + (f" report={solver.report}" if solver.report != "full" else "")
+            + (" run_tests=off" if getattr(solver, "run_tests", True) is False else "")
             + f" budget: {b.max_steps} steps, {b.max_tool_calls} tool calls, "
             f"{b.max_test_runs} test runs, {b.max_tokens} tokens, ${b.max_cost_usd:.2f}, "
             f"{b.max_runtime_seconds:.0f}s per task"
@@ -243,12 +298,16 @@ def run_benchmark(
                 break
 
     summary = _summarize(results, run_id, solver_name, len(tasks), repeat, started_at, t0, out_dir)
+    summary.suite = suite
     if isinstance(solver, AgentSolver):
         summary.model = solver.model
         summary.budget = solver.budget.to_record()
         summary.context = getattr(solver, "context", None)
         if getattr(solver, "retrieval", "none") != "none":
             summary.retrieval = solver.retrieval_config().to_record()
+        summary.report = solver.report
+        if isinstance(solver, BaselineSolver):
+            summary.run_tests_tool = solver.run_tests
     summary.agent = agent_metrics(tasks, results)
     summary.stopped_early = stopped_early
     (out_dir / "summary.json").write_text(summary.model_dump_json(indent=2), encoding="utf-8")
@@ -353,7 +412,17 @@ def build_solver(args: argparse.Namespace) -> Solver:
         "model": settings.strong,
         "budget": budget_from_args(args),
         "cache_dir": args.cache_dir,
+        "report": args.report,
     }
+    if args.no_run_tests:
+        if args.solver == "baseline":
+            options["run_tests"] = False
+        else:
+            print(
+                "warning: --no-run-tests has no effect on the structured solver (the runtime "
+                "owns the test runs and the model never had run_tests)",
+                file=sys.stderr,
+            )
     if args.context != "full":
         if args.solver != "structured":
             raise ConfigError("--context is a structured-solver option")
@@ -377,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --repeat must be >= 1", file=sys.stderr)
         return 2
     try:
-        tasks = load_tasks(args.tasks, args.ids)
+        tasks = select_suite(load_tasks(args.tasks, args.ids), args.suite)
     except TaskLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -407,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         rebuild=args.rebuild,
         cache_dir=args.cache_dir,
         max_run_cost=args.max_run_cost,
+        suite=args.suite,
     )
     print_summary(summary)
 
