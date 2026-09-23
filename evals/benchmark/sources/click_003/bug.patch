@@ -1,0 +1,31 @@
+diff --git a/src/click/types.py b/src/click/types.py
+index e71c1c2..25287a8 100644
+--- a/src/click/types.py
++++ b/src/click/types.py
+@@ -519,12 +519,8 @@ class _NumberRangeBase(_NumberParamTypeBase):
+         import operator
+ 
+         rv = super().convert(value, param, ctx)
+-        lt_min: bool = self.min is not None and (
+-            operator.le if self.min_open else operator.lt
+-        )(rv, self.min)
+-        gt_max: bool = self.max is not None and (
+-            operator.ge if self.max_open else operator.gt
+-        )(rv, self.max)
++        lt_min: bool = self.min is not None and operator.lt(rv, self.min)
++        gt_max: bool = self.max is not None and operator.gt(rv, self.max)
+ 
+         if self.clamp:
+             if lt_min:
+@@ -601,10 +597,7 @@ class IntRange(_NumberRangeBase, IntParamType):
+     def _clamp(  # type: ignore
+         self, bound: int, dir: t.Literal[1, -1], open: bool
+     ) -> int:
+-        if not open:
+-            return bound
+-
+-        return bound + dir
++        return bound
+ 
+ 
+ class FloatParamType(_NumberParamTypeBase):

@@ -1,0 +1,37 @@
+diff --git a/tests/test_repopilot_click_002.py b/tests/test_repopilot_click_002.py
+new file mode 100644
+index 0000000..3d8840c
+--- /dev/null
++++ b/tests/test_repopilot_click_002.py
+@@ -0,0 +1,31 @@
++import click
++from click.testing import CliRunner
++
++
++def test_single_dash_is_a_value_for_an_option_with_an_optional_value():
++    @click.command()
++    @click.option("-o", "--out", is_flag=False, flag_value="default.txt")
++    def cli(out):
++        click.echo(f"out={out}")
++
++    runner = CliRunner()
++    assert runner.invoke(cli, ["--out", "-"]).output == "out=-\n"
++    assert runner.invoke(cli, ["-o", "-"]).output == "out=-\n"
++    assert runner.invoke(cli, ["--out=-"]).output == "out=-\n"
++    # Omitting the value still gives the flag value, and a real option still
++    # ends the value.
++    assert runner.invoke(cli, ["--out"]).output == "out=default.txt\n"
++    assert runner.invoke(cli, ["--out", "--help"]).output.startswith("Usage:")
++
++
++def test_single_dash_opens_stdout_for_an_optional_file_option():
++    @click.command()
++    @click.option("--log", is_flag=False, flag_value="app.log", type=click.File("w"))
++    @click.argument("message")
++    def cli(log, message):
++        click.echo(message, file=log)
++
++    runner = CliRunner()
++    result = runner.invoke(cli, ["--log", "-", "hello"])
++    assert result.exit_code == 0, result.output
++    assert result.output == "hello\n"

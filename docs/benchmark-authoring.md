@@ -123,6 +123,10 @@ The authored label survives only as `authored_difficulty` in `task.toml`.
 **Hidden tests.** One new file named `tests/test_repopilot_<id>.py` (or the repo's
 test directory), exercising the behaviour with inputs different from the existing
 tests. It must fail with the bug and pass with the fix — `make_task` checks both.
+A hidden test that passes with the bug too is refused unless `task.toml` says
+`hidden_pass_to_pass = true` (a regression guard transplanted with a real fix,
+see below); it then ships as `pass_to_pass`, and at least one hidden test must
+still be fail-to-pass.
 Whether the *existing* tests also catch the bug is your choice: most tasks should
 have visible failing tests (the agent can run them and iterate), and three to five
 tasks should be caught only by the hidden test (the agent must reproduce from the
@@ -243,7 +247,10 @@ with a `site_note`.
 <parent-sha> ...`; `make_task` derives the gold patch as the fix commit's
 Python source hunks against its parent (tests, changelog and docs excluded),
 checks the parent relationship, and expects the fix's tests transplanted into a
-new `tests/test_repopilot_<id>.py` in `hidden.patch` like any other task. The
+new `tests/test_repopilot_<id>.py` in `hidden.patch` like any other task. Upstream
+tests usually mix the cases that show the bug with guards that pass either way
+(`click_009` carries six of them); `hidden_pass_to_pass = true` lets the guards
+through as `pass_to_pass`, where they still catch a fix that breaks them. The
 report is written by us at the public_api or symptom_only tier from what the
 upstream issue reports — never the issue text.
 
@@ -253,7 +260,13 @@ description arrive on the Mac already checked: the mutation applies, the
 visible suite behaves as claimed (green for a hidden-only task), the hidden
 test fails with the bug and passes without it, the audit passes. On the Mac:
 `uv run python scripts/make_task.py evals/benchmark/sources/<id>` (Docker),
-read the report, commit the source directory and the JSON together.
+read the report, commit the source directory and the JSON together. One gotcha
+of the scratch-clone workflow: run the repository's suite with
+`PYTHONDONTWRITEBYTECODE=1`, because a mutation that keeps a line's byte length
+(`return idx, not item.is_eager` for `return not item.is_eager, idx`) and is
+reverted within the same second leaves a `.pyc` that Python still trusts, and
+the clean tree then fails the mutated tests. `make_task` is immune (fresh
+exports in a fresh container).
 
 **Refreshing metadata.** `make_task SRC --refresh` re-runs only the git half —
 patch normalization, the audit, the derived fields — on an already-built task,
@@ -277,3 +290,50 @@ symbol in the report replaced by a placeholder, derived at run time from the
 task file); `scripts/memorization_probe.py --models ...` asks each model to
 write the gold symbols from memory and scores the replies against the pinned
 source.
+
+## click (v1, 9 tasks, built 2026-09-22)
+
+Pinned commit `00fadb89` (8.3.0) for the mutations; the real task sits at the
+parent of its fix. 1,285 tests in 2.2 s, no third-party dependencies. Test
+files map cleanly onto modules: `test_options.py`, `test_arguments.py`,
+`test_basic.py` and `test_commands.py` exercise `core.py` with `parser.py`
+underneath; `test_types.py` covers `types.py`; `test_formatting.py` covers
+`formatting.py` and `_textwrap.py`; `test_termui.py` covers `termui.py` and
+`_termui_impl.py` (prompt, progress bar; a few tests skip off Windows);
+`test_normalization.py` is the only place `token_normalize_func` is exercised.
+Everything is reachable through `@click.command`/`@click.option` and
+`CliRunner`, so every report is a CLI transcript.
+
+| id | site | fault | category | report | hidden-only | cross-module | shape |
+|---|---|---|---|---|---|---|---|
+| click_001 | `parser.py` `_OptionParser.add_option` | option names not normalized when declared, only when matched | propagation | public_api | yes | yes | single_line |
+| click_002 | `parser.py` `_OptionParser._get_value_from_state` | a lone `-` taken for an option (the `len > 1` guard dropped), so an optional-value option rejects `-` | missing_check | symptom_only (`click.command`, `click.option`, `click.File`) | yes | yes | single_line |
+| click_003 | `types.py` `_NumberRangeBase.convert` + `IntRange._clamp` | open bounds treated as closed when checking and when clamping | off_by_one | public_api | no (6 visible) | no | multi_site |
+| click_004 | `types.py` `Choice.convert` | choices mapped without the context's normalization function; the typed value is normalized | propagation | public_api | yes | no | single_line |
+| click_005 | `formatting.py` `HelpFormatter.write_dl` | the section indent not subtracted from the description width: option help runs past the terminal | off_by_one | public_api | yes | yes | single_line |
+| click_006 | `core.py` `Option.prompt_for_value` | a callable default not evaluated before prompting | wrong_condition | public_api | yes | yes | single_line |
+| click_007 | `core.py` `iter_params_for_processing` | command-line order sorted before eagerness: `--help`/`--version` lose to an earlier invalid option | ordering | symptom_only (`click.command`, `click.option`, `click.version_option`) | no (11 visible) | yes | single_line |
+| click_008 | `_textwrap.py` `TextWrapper.extra_indent` | the subsequent indent not restored after an indented paragraph | state_management | symptom_only (`click.command`, `click.wrap_text`) | yes | yes | single_line |
+| click_009 | `core.py` `Option.__init__` — real fix `4fd2fea0db` (#2930, issues #2894/#2897), base `9ce34f20` | a flag option with an explicit `type` gets no flag value | wrong_condition | public_api | yes | yes | multi_line |
+
+Against the design's planned areas (§4.3): area 1 (option matching) and area 5
+(help formatting) came out hidden-only rather than visible — the suite never
+declares an option with capitals under normalization and never wraps help text
+at the exact boundary; area 3 (ranges) is multi-site as planned but visible,
+because `test_types.py::test_range*` pins every boundary of `convert` and
+`_clamp`, so no hidden-only site exists there; area 2 (`_unpack_args`) was
+replaced by the lone-`-` guard in the same parser module — the `_unpack_args`
+sites are either pinned by `test_arguments.py` or sit under comments that state
+the invariant; area 6 (defaults / `show_default`) moved to the prompt path of
+the same feature, since every `show_default` branch is pinned by
+`test_options.py`; area 8 (`utils.py`) was replaced by the wrapping helper,
+which gave the set its state-management task. Flags for the nine: hidden-only
+7, cross-module 7, symptom_only 3, multi-site 1 (no cross-file); every category
+except `exception_handling` and `cache_invalidation` appears. Under the derived
+rule the set is 7 hard / 2 medium / 0 easy (v0: 11 / 2 / 1 the other way round),
+which is what "cross-module and hidden-only both score a point" produces; the
+leak ablation is what tells whether that label means anything.
+
+Every task was pre-checked in the cloud before delivery (mutation applies,
+visible suite as claimed, hidden tests fail-to-pass, audit ok, real-task
+guards allowed); the Docker derivation on the Mac is the shipped record.

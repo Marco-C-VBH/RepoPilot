@@ -1,0 +1,16 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/click_002
+id = "click_002"
+repo = "https://github.com/pallets/click"
+commit = "00fadb8904387158ce6e9aa1573be770446895c1"   # click 8.3.0
+suite = "v1"
+category = "missing_check"
+report_level = "symptom_only"
+entry_points = ["click.command", "click.option", "click.File"]
+test_command = "pytest tests/test_options.py tests/test_arguments.py"
+authored_difficulty = "hard"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

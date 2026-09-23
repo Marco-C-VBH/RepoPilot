@@ -1,0 +1,13 @@
+diff --git a/src/click/core.py b/src/click/core.py
+index ff2f74a..76ef3b3 100644
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -3062,7 +3062,7 @@ class Option(Parameter):
+ 
+         # Calculate the default before prompting anything to lock in the value before
+         # attempting any user interaction.
+-        default = self.get_default(ctx)
++        default = self.get_default(ctx, call=False)
+ 
+         # A boolean flag can use a simplified [y/n] confirmation prompt.
+         if self.is_bool_flag:

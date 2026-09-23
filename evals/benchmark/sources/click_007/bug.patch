@@ -1,0 +1,13 @@
+diff --git a/src/click/core.py b/src/click/core.py
+index ff2f74a..46ae7a8 100644
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -135,7 +135,7 @@ def iter_params_for_processing(
+         except ValueError:
+             idx = float("inf")
+ 
+-        return not item.is_eager, idx
++        return idx, not item.is_eager
+ 
+     return sorted(declaration_order, key=sort_key)
+ 

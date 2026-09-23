@@ -1,0 +1,42 @@
+diff --git a/tests/test_repopilot_click_001.py b/tests/test_repopilot_click_001.py
+new file mode 100644
+index 0000000..bdacbd1
+--- /dev/null
++++ b/tests/test_repopilot_click_001.py
+@@ -0,0 +1,36 @@
++import click
++from click.testing import CliRunner
++
++SETTINGS = {"token_normalize_func": lambda token: token.lower()}
++
++
++def test_option_declared_with_capitals_matches_any_case():
++    @click.command(context_settings=SETTINGS)
++    @click.option("--Greeting", default="hi")
++    @click.option("-N", "--Name", default="world")
++    def cli(greeting, name):
++        click.echo(f"{greeting} {name}")
++
++    runner = CliRunner()
++    for args in (
++        ["--greeting", "hello", "--name", "click"],
++        ["--GREETING", "hello", "-n", "click"],
++        ["--Greeting", "hello", "--NAME", "click"],
++        ["--greeting=hello", "-N", "click"],
++    ):
++        result = runner.invoke(cli, args)
++        assert result.exit_code == 0, (args, result.output)
++        assert result.output == "hello click\n"
++
++
++def test_boolean_flag_declared_with_capitals_matches_any_case():
++    @click.command(context_settings=SETTINGS)
++    @click.option("--Shout/--Whisper", default=False)
++    def cli(shout):
++        click.echo("LOUD" if shout else "quiet")
++
++    runner = CliRunner()
++    assert runner.invoke(cli, ["--shout"]).output == "LOUD\n"
++    assert runner.invoke(cli, ["--SHOUT"]).output == "LOUD\n"
++    assert runner.invoke(cli, ["--Whisper"]).output == "quiet\n"
++    assert runner.invoke(cli, ["--WHISPER"]).output == "quiet\n"

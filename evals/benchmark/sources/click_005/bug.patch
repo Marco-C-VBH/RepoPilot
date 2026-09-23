@@ -1,0 +1,13 @@
+diff --git a/src/click/formatting.py b/src/click/formatting.py
+index 0b64f83..bae08a3 100644
+--- a/src/click/formatting.py
++++ b/src/click/formatting.py
+@@ -239,7 +239,7 @@ class HelpFormatter:
+                 self.write("\n")
+                 self.write(" " * (first_col + self.current_indent))
+ 
+-            text_width = max(self.width - first_col - 2, 10)
++            text_width = max(self.width - first_col, 10)
+             wrapped_text = wrap_text(second, text_width, preserve_paragraphs=True)
+             lines = wrapped_text.splitlines()
+ 

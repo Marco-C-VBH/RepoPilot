@@ -1,0 +1,12 @@
+diff --git a/src/click/_textwrap.py b/src/click/_textwrap.py
+index 97fbee3..993fc24 100644
+--- a/src/click/_textwrap.py
++++ b/src/click/_textwrap.py
+@@ -35,7 +35,6 @@ class TextWrapper(textwrap.TextWrapper):
+             yield
+         finally:
+             self.initial_indent = old_initial_indent
+-            self.subsequent_indent = old_subsequent_indent
+ 
+     def indent_only(self, text: str) -> str:
+         rv = []

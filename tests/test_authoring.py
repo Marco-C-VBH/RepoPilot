@@ -14,6 +14,7 @@ from evals.benchmark.authoring import (
     AuthoringError,
     audit_draft,
     changed_lines,
+    classify_tests,
     enclosing_symbols,
     init_draft,
     is_test_path,
@@ -22,6 +23,7 @@ from evals.benchmark.authoring import (
     refresh_task,
 )
 from evals.benchmark.schema import Category, Difficulty, ReportLevel, Suite, TaskSource
+from repopilot.sandbox.results import TestOutcome, TestResult, TestRun
 from tests.fixture_repo import (
     BUG_PATCH,
     HIDDEN_TEST_PATCH,
@@ -371,6 +373,79 @@ def test_load_draft_checks_the_v1_keys(tmp_path: Path, fixture_repo: tuple[Path,
     (source / "task.toml").write_text(toml.format(id="fixture_001", repo=repo, commit=sha))
     with pytest.raises(AuthoringError, match="fix_commit is for real tasks"):
         load_draft(source)
+    toml = _toml_with('hidden_pass_to_pass = "yes"')
+    (source / "task.toml").write_text(toml.format(id="fixture_001", repo=repo, commit=sha))
+    with pytest.raises(AuthoringError, match="hidden_pass_to_pass must be true or false"):
+        load_draft(source)
+    toml = _toml_with("hidden_pass_to_pass = true")
+    (source / "task.toml").write_text(toml.format(id="fixture_001", repo=repo, commit=sha))
+    assert load_draft(source).hidden_pass_to_pass is True
+
+
+# -- classifying the two test runs ----------------------------------------------------
+
+
+def _run(**outcomes: str) -> TestRun:
+    tests = {
+        nodeid.replace("__", "::"): TestResult(nodeid.replace("__", "::"), TestOutcome(outcome))
+        for nodeid, outcome in outcomes.items()
+    }
+    return TestRun(
+        command="pytest",
+        exit_code=0,
+        timed_out=False,
+        duration_seconds=1.0,
+        stdout="",
+        stderr="",
+        tests=tests,
+        report_found=True,
+    )
+
+
+HIDDEN = "tests/test_repopilot_x.py"
+
+
+def test_classify_tests_splits_fail_to_pass_from_pass_to_pass() -> None:
+    buggy = _run(**{"tests/test_a.py__test_old": "passed", f"{HIDDEN}__test_new": "failed"})
+    fixed = _run(**{"tests/test_a.py__test_old": "passed", f"{HIDDEN}__test_new": "passed"})
+    f2p, p2p, excluded = classify_tests(buggy, fixed, hidden_files=[HIDDEN])
+    assert f2p == (f"{HIDDEN}::test_new",)
+    assert p2p == ("tests/test_a.py::test_old",)
+    assert excluded == {}
+
+
+def test_classify_tests_rejects_a_hidden_guard_unless_the_source_allows_it() -> None:
+    buggy = _run(**{f"{HIDDEN}__test_new": "failed", f"{HIDDEN}__test_guard": "passed"})
+    fixed = _run(**{f"{HIDDEN}__test_new": "passed", f"{HIDDEN}__test_guard": "passed"})
+    with pytest.raises(AuthoringError, match="these pass with the bug too: .*test_guard"):
+        classify_tests(buggy, fixed, hidden_files=[HIDDEN])
+    f2p, p2p, _ = classify_tests(buggy, fixed, hidden_files=[HIDDEN], hidden_pass_to_pass=True)
+    assert f2p == (f"{HIDDEN}::test_new",)
+    assert p2p == (f"{HIDDEN}::test_guard",)
+
+
+def test_classify_tests_rejects_broken_missing_and_useless_hidden_tests() -> None:
+    both_fail = _run(**{f"{HIDDEN}__test_new": "failed", "tests/test_a.py__test_old": "passed"})
+    with pytest.raises(AuthoringError, match="must fail with the bug and pass with the fix: "):
+        classify_tests(both_fail, both_fail, hidden_files=[HIDDEN])
+    with pytest.raises(AuthoringError, match="was not collected"):
+        classify_tests(_run(a__t="passed"), _run(a__t="passed"), hidden_files=[HIDDEN])
+    # A guard alone is not a hidden test: something must fail with the bug.
+    guard_only = _run(**{f"{HIDDEN}__test_guard": "passed", "tests/test_a.py__test_old": "failed"})
+    guard_only_fixed = _run(
+        **{f"{HIDDEN}__test_guard": "passed", "tests/test_a.py__test_old": "passed"}
+    )
+    with pytest.raises(AuthoringError, match="no hidden test fails with the bug"):
+        classify_tests(
+            guard_only, guard_only_fixed, hidden_files=[HIDDEN], hidden_pass_to_pass=True
+        )
+    # The gold patch may not break a test that passes with the bug.
+    with pytest.raises(AuthoringError, match="gold patch breaks tests"):
+        classify_tests(
+            _run(**{f"{HIDDEN}__test_new": "failed", "tests/test_a.py__test_old": "passed"}),
+            _run(**{f"{HIDDEN}__test_new": "passed", "tests/test_a.py__test_old": "failed"}),
+            hidden_files=[HIDDEN],
+        )
 
 
 # -- real tasks ---------------------------------------------------------------------

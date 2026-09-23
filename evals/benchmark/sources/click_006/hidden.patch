@@ -1,0 +1,41 @@
+diff --git a/tests/test_repopilot_click_006.py b/tests/test_repopilot_click_006.py
+new file mode 100644
+index 0000000..440abe3
+--- /dev/null
++++ b/tests/test_repopilot_click_006.py
+@@ -0,0 +1,35 @@
++import click
++from click.testing import CliRunner
++
++
++def _guess_name():
++    return "world"
++
++
++def test_prompt_evaluates_a_callable_default():
++    @click.command()
++    @click.option("--name", prompt=True, default=_guess_name)
++    @click.option("--count", prompt=True, default=lambda: 3, type=int)
++    def cli(name, count):
++        click.echo(f"name={name!r} count={count!r}")
++
++    runner = CliRunner()
++    result = runner.invoke(cli, input="\n\n")
++    assert result.exit_code == 0, result.output
++    assert result.output == "Name [world]: \nCount [3]: \nname='world' count=3\n"
++
++    result = runner.invoke(cli, input="Ada\n7\n")
++    assert result.exit_code == 0, result.output
++    assert result.output == "Name [world]: Ada\nCount [3]: 7\nname='Ada' count=7\n"
++
++
++def test_confirmation_prompt_of_a_flag_uses_the_callable_default():
++    @click.command()
++    @click.option("--force/--no-force", prompt=True, default=lambda: False)
++    def cli(force):
++        click.echo(f"force={force!r}")
++
++    runner = CliRunner()
++    result = runner.invoke(cli, input="\n")
++    assert result.exit_code == 0, result.output
++    assert result.output == "Force [y/N]: \nforce=False\n"

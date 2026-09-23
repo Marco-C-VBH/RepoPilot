@@ -1,0 +1,52 @@
+diff --git a/tests/test_repopilot_click_007.py b/tests/test_repopilot_click_007.py
+new file mode 100644
+index 0000000..0ac9ea0
+--- /dev/null
++++ b/tests/test_repopilot_click_007.py
+@@ -0,0 +1,46 @@
++import click
++from click.testing import CliRunner
++
++
++def _cli():
++    @click.command()
++    @click.version_option("1.2.3", prog_name="tool")
++    @click.option("--count", type=int, default=1)
++    @click.option("--name", required=True)
++    def cli(count, name):
++        click.echo(name * count)
++
++    return cli
++
++
++def test_help_and_version_win_over_an_invalid_option_given_before_them():
++    runner = CliRunner()
++    for args in (["--count", "x", "--help"], ["--name", "a", "--count", "x", "--help"]):
++        result = runner.invoke(_cli(), args)
++        assert result.exit_code == 0, (args, result.output)
++        assert result.output.startswith("Usage: cli [OPTIONS]"), (args, result.output)
++        assert "is not a valid integer" not in result.output
++
++    result = runner.invoke(_cli(), ["--count", "x", "--version"])
++    assert result.exit_code == 0, result.output
++    assert result.output == "tool, version 1.2.3\n"
++
++
++def test_eager_callbacks_run_before_the_others_whatever_the_command_line_order():
++    order = []
++
++    def record(ctx, param, value):
++        order.append(param.name)
++        return value
++
++    @click.command()
++    @click.option("--normal-a", is_flag=True, callback=record)
++    @click.option("--eager", is_flag=True, is_eager=True, callback=record)
++    @click.option("--normal-b", is_flag=True, callback=record)
++    def cli(normal_a, eager, normal_b):
++        pass
++
++    runner = CliRunner()
++    result = runner.invoke(cli, ["--normal-b", "--normal-a", "--eager"])
++    assert result.exit_code == 0, result.output
++    assert order == ["eager", "normal_b", "normal_a"]

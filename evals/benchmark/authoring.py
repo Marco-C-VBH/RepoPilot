@@ -91,6 +91,7 @@ OPTIONAL_KEYS = (
     "authored_difficulty",
     "site_note",
     "fix_commit",
+    "hidden_pass_to_pass",
 )
 GIT_IDENTITY = ("-c", "user.name=repopilot", "-c", "user.email=repopilot@localhost")
 MAX_CHANGELOG_CHARS = 200_000
@@ -138,6 +139,10 @@ class TaskDraft:
     authored_difficulty: Difficulty | None = None  # the author's estimate; never shipped
     site_note: str | None = None  # why a site the audit flagged was kept
     fix_commit: str | None = None  # real tasks: the upstream fix
+    # Hidden tests that pass with the bug too are allowed (as pass_to_pass) only when
+    # the author says so: regression guards transplanted with a real fix, never an
+    # accident.
+    hidden_pass_to_pass: bool = False
 
 
 def load_draft(directory: Path) -> TaskDraft:
@@ -203,6 +208,9 @@ def load_draft(directory: Path) -> TaskDraft:
     site_note = meta.get("site_note")
     if site_note is not None and not isinstance(site_note, str):
         raise AuthoringError("task.toml: site_note must be a string")
+    hidden_pass_to_pass = meta.get("hidden_pass_to_pass", False)
+    if not isinstance(hidden_pass_to_pass, bool):
+        raise AuthoringError("task.toml: hidden_pass_to_pass must be true or false")
 
     return TaskDraft(
         directory=directory,
@@ -223,6 +231,7 @@ def load_draft(directory: Path) -> TaskDraft:
         authored_difficulty=authored_difficulty,
         site_note=site_note,
         fix_commit=fix_commit,
+        hidden_pass_to_pass=hidden_pass_to_pass,
     )
 
 
@@ -525,7 +534,40 @@ def derive_tests(
         image, [patches.gold_patch, patches.hidden_patch], command, timeout, limits, "fixed"
     )
 
-    for hidden_file in patches.hidden_files:
+    fail_to_pass, pass_to_pass, excluded = classify_tests(
+        buggy,
+        fixed,
+        hidden_files=patches.hidden_files,
+        hidden_pass_to_pass=draft.hidden_pass_to_pass,
+        command=command,
+    )
+    return DerivedTests(
+        fail_to_pass=fail_to_pass,
+        pass_to_pass=pass_to_pass,
+        excluded=excluded,
+        buggy_run=buggy,
+        fixed_run=fixed,
+        command=command,
+    )
+
+
+def classify_tests(
+    buggy: TestRun,
+    fixed: TestRun,
+    *,
+    hidden_files: Sequence[str],
+    hidden_pass_to_pass: bool = False,
+    command: str = "",
+) -> tuple[tuple[str, ...], tuple[str, ...], dict[str, str]]:
+    """``(fail_to_pass, pass_to_pass, excluded)`` from the buggy and fixed runs.
+
+    Rejects a gold patch that breaks a passing test, a hidden file that was not
+    collected, a hidden test that fails on both sides, and -- unless the source
+    says ``hidden_pass_to_pass = true`` -- a hidden test that passes with the bug
+    (a regression guard transplanted with a real fix; it counts as pass_to_pass).
+    At least one hidden test must fail with the bug and pass with the fix.
+    """
+    for hidden_file in hidden_files:
         if not any(t.startswith(hidden_file + "::") for t in (*buggy.tests, *fixed.tests)):
             raise AuthoringError(
                 f"hidden test file {hidden_file} was not collected by {command!r}; "
@@ -550,8 +592,10 @@ def derive_tests(
     if broken:
         raise AuthoringError(f"gold patch breaks tests that pass with the bug: {broken}")
 
-    hidden_ids = [t for t in (*buggy.tests, *fixed.tests) if _file_of(t) in patches.hidden_files]
-    undetecting = sorted(t for t in set(hidden_ids) if t not in fail_to_pass)
+    hidden = set(hidden_files)
+    hidden_ids = sorted({t for t in (*buggy.tests, *fixed.tests) if _file_of(t) in hidden})
+    guards = [t for t in hidden_ids if t in pass_to_pass]
+    undetecting = [t for t in hidden_ids if t not in fail_to_pass and t not in guards]
     if undetecting:
         detail = ", ".join(
             f"{t}: {buggy.outcome(t) or 'missing'} with bug, "
@@ -559,17 +603,18 @@ def derive_tests(
             for t in undetecting
         )
         raise AuthoringError(f"hidden tests must fail with the bug and pass with the fix: {detail}")
+    if guards and not hidden_pass_to_pass:
+        raise AuthoringError(
+            "hidden tests must fail with the bug and pass with the fix; these pass with the "
+            f"bug too: {', '.join(guards)} (a regression guard transplanted with a real fix "
+            "is allowed when task.toml says hidden_pass_to_pass = true; it then counts as "
+            "pass_to_pass)"
+        )
+    if hidden_ids and not any(t in fail_to_pass for t in hidden_ids):
+        raise AuthoringError("no hidden test fails with the bug and passes with the fix")
     if not fail_to_pass:
         raise AuthoringError("no test distinguishes the buggy tree from the fixed one")
-
-    return DerivedTests(
-        fail_to_pass=tuple(fail_to_pass),
-        pass_to_pass=tuple(pass_to_pass),
-        excluded=excluded,
-        buggy_run=buggy,
-        fixed_run=fixed,
-        command=command,
-    )
+    return tuple(fail_to_pass), tuple(pass_to_pass), excluded
 
 
 def _file_of(nodeid: str) -> str:
@@ -900,7 +945,8 @@ test_timeout_seconds = 300
 
 REAL_BLOCK = """
 source = "real"                # the base commit is buggy; no bug.patch
-fix_commit = "{fix_commit}"   # the upstream fix; commit above must be its parent"""
+fix_commit = "{fix_commit}"   # the upstream fix; commit above must be its parent
+# hidden_pass_to_pass = true   # if the transplanted tests include guards that pass with the bug"""
 
 DESCRIPTION_TEMPLATE = """\
 <!-- The bug report the agent sees: what a user did, what happened, what was expected.

@@ -1,0 +1,88 @@
+{
+  "id": "click_004",
+  "repo": "https://github.com/pallets/click",
+  "base_commit": "00fadb8904387158ce6e9aa1573be770446895c1",
+  "source": "mutation",
+  "description": "When the context has a `token_normalize_func`, a case-sensitive `click.Choice` whose choices are changed by that function rejects every spelling of them, including the declared one.\n\n```python\nimport click\n\n@click.command(context_settings={\"token_normalize_func\": lambda t: t.lower()})\n@click.option(\"--level\", type=click.Choice([\"Debug\", \"Info\"]))\ndef cli(level):\n    print(level)\n```\n\n```\n$ cli --level Debug\nError: Invalid value for '--level': 'Debug' is not one of 'debug', 'info'.\n$ cli --level debug\nError: Invalid value for '--level': 'debug' is not one of 'debug', 'info'.\n$ cli --help\nUsage: cli [OPTIONS]\n\nOptions:\n  --level [debug|info]\n```\n\nThe help text and the error message both list the choices in their normalized form, and yet typing exactly one of the listed values is rejected. The typed value is normalized, but it is being compared against the choices as declared; the same option with `case_sensitive=False` happens to work because case folding hides the difference. Expected: `Debug`, `debug` and `DEBUG` all select the choice, and the command receives the original spelling `Debug`. The same holds for a normalization function that rewrites characters (`dry_run` should select a choice declared as `dry-run`) and for enum choices, where the member name goes through the function like any other choice.",
+  "bug_patch": "diff --git a/src/click/types.py b/src/click/types.py\nindex e71c1c2..1577e7c 100644\n--- a/src/click/types.py\n+++ b/src/click/types.py\n@@ -342,7 +342,7 @@ class Choice(ParamType, t.Generic[ParamTypeValue]):\n         matched \"original\" choice.\n         \"\"\"\n         normed_value = self.normalize_choice(choice=value, ctx=ctx)\n-        normalized_mapping = self._normalized_mapping(ctx=ctx)\n+        normalized_mapping = self._normalized_mapping()\n \n         try:\n             return next(\n",
+  "gold_patch": "diff --git a/src/click/types.py b/src/click/types.py\nindex 1577e7c..e71c1c2 100644\n--- a/src/click/types.py\n+++ b/src/click/types.py\n@@ -342,7 +342,7 @@ class Choice(ParamType, t.Generic[ParamTypeValue]):\n         matched \"original\" choice.\n         \"\"\"\n         normed_value = self.normalize_choice(choice=value, ctx=ctx)\n-        normalized_mapping = self._normalized_mapping()\n+        normalized_mapping = self._normalized_mapping(ctx=ctx)\n \n         try:\n             return next(\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_click_004.py b/tests/test_repopilot_click_004.py\nnew file mode 100644\nindex 0000000..35e7fce\n--- /dev/null\n+++ b/tests/test_repopilot_click_004.py\n@@ -0,0 +1,52 @@\n+import enum\n+\n+import click\n+from click.testing import CliRunner\n+\n+LOWER = {\"token_normalize_func\": lambda token: token.lower()}\n+\n+\n+def test_case_sensitive_choice_under_a_normalizing_context():\n+    @click.command(context_settings=LOWER)\n+    @click.option(\"--level\", type=click.Choice([\"Debug\", \"Info\"]))\n+    def cli(level):\n+        click.echo(level)\n+\n+    runner = CliRunner()\n+    for spelling in (\"Debug\", \"debug\", \"DEBUG\"):\n+        result = runner.invoke(cli, [\"--level\", spelling])\n+        assert result.exit_code == 0, (spelling, result.output)\n+        assert result.output == \"Debug\\n\"\n+\n+    result = runner.invoke(cli, [\"--level\", \"warn\"])\n+    assert result.exit_code == 2\n+    assert \"'warn' is not one of 'debug', 'info'.\" in result.output\n+\n+\n+def test_normalization_that_rewrites_characters_applies_to_the_choices_too():\n+    @click.command(context_settings={\"token_normalize_func\": lambda t: t.replace(\"-\", \"_\")})\n+    @click.argument(\"mode\", type=click.Choice([\"dry-run\", \"no-color\"]))\n+    def cli(mode):\n+        click.echo(mode)\n+\n+    runner = CliRunner()\n+    # The declared spelling and the normalized spelling both select the choice,\n+    # and the original choice is what the command receives.\n+    assert runner.invoke(cli, [\"dry-run\"]).output == \"dry-run\\n\"\n+    assert runner.invoke(cli, [\"dry_run\"]).output == \"dry-run\\n\"\n+    assert runner.invoke(cli, [\"no_color\"]).output == \"no-color\\n\"\n+\n+\n+def test_enum_choices_under_a_normalizing_context():\n+    class Color(enum.Enum):\n+        RED = 1\n+        GREEN = 2\n+\n+    @click.command(context_settings=LOWER)\n+    @click.option(\"--color\", type=click.Choice(Color))\n+    def cli(color):\n+        click.echo(repr(color))\n+\n+    runner = CliRunner()\n+    assert runner.invoke(cli, [\"--color\", \"red\"]).output == \"<Color.RED: 1>\\n\"\n+    assert runner.invoke(cli, [\"--color\", \"GREEN\"]).output == \"<Color.GREEN: 2>\\n\"\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_click_004.py::test_case_sensitive_choice_under_a_normalizing_context",
+    "tests/test_repopilot_click_004.py::test_enum_choices_under_a_normalizing_context",
+    "tests/test_repopilot_click_004.py::test_normalization_that_rewrites_characters_applies_to_the_choices_too"
+  ],
+  "pass_to_pass": [
+    "tests/test_normalization.py::test_choice_normalization",
+    "tests/test_normalization.py::test_command_normalization",
+    "tests/test_normalization.py::test_option_normalization",
+    "tests/test_types.py::test_cast_multi_default[-1-None-None-expect6]",
+    "tests/test_types.py::test_cast_multi_default[2-False-None-None]",
+    "tests/test_types.py::test_cast_multi_default[2-False-default1-expect1]",
+    "tests/test_types.py::test_cast_multi_default[2-True-None-expect4]",
+    "tests/test_types.py::test_cast_multi_default[2-True-default5-expect5]",
+    "tests/test_types.py::test_cast_multi_default[None-True-None-expect2]",
+    "tests/test_types.py::test_cast_multi_default[None-True-default3-expect3]",
+    "tests/test_types.py::test_choice_get_invalid_choice_message",
+    "tests/test_types.py::test_file_error_surrogates",
+    "tests/test_types.py::test_file_surrogates[type0]",
+    "tests/test_types.py::test_file_surrogates[type1]",
+    "tests/test_types.py::test_float_range_no_clamp_open",
+    "tests/test_types.py::test_invalid_path_with_esc_sequence",
+    "tests/test_types.py::test_path_resolve_symlink",
+    "tests/test_types.py::test_path_surrogates",
+    "tests/test_types.py::test_path_type[None-a/b/c.txt]",
+    "tests/test_types.py::test_path_type[Path-expect3]",
+    "tests/test_types.py::test_path_type[bytes-a/b/c.txt]",
+    "tests/test_types.py::test_path_type[str-a/b/c.txt]",
+    "tests/test_types.py::test_range[type0-3-3]",
+    "tests/test_types.py::test_range[type1-5-5]",
+    "tests/test_types.py::test_range[type10-0.51-0.51]",
+    "tests/test_types.py::test_range[type11-1.49-1.49]",
+    "tests/test_types.py::test_range[type12--0.0-0.5]",
+    "tests/test_types.py::test_range[type13-inf-1.5]",
+    "tests/test_types.py::test_range[type2-100-100]",
+    "tests/test_types.py::test_range[type3-5-5]",
+    "tests/test_types.py::test_range[type4--100--100]",
+    "tests/test_types.py::test_range[type5--1-0]",
+    "tests/test_types.py::test_range[type6-6-5]",
+    "tests/test_types.py::test_range[type7-0-1]",
+    "tests/test_types.py::test_range[type8-5-4]",
+    "tests/test_types.py::test_range[type9-1.2-1.2]",
+    "tests/test_types.py::test_range_fail[type0-6-6 is not in the range 0<=x<=5.]",
+    "tests/test_types.py::test_range_fail[type1-4-4 is not in the range x>=5.]",
+    "tests/test_types.py::test_range_fail[type2-6-6 is not in the range x<=5.]",
+    "tests/test_types.py::test_range_fail[type3-0-0<x<=5]",
+    "tests/test_types.py::test_range_fail[type4-5-0<=x<5]",
+    "tests/test_types.py::test_range_fail[type5-0.5-x>0.5]",
+    "tests/test_types.py::test_range_fail[type6-1.5-x<1.5]"
+  ],
+  "test_command": "pytest tests/test_types.py tests/test_normalization.py",
+  "gold_files": [
+    "src/click/types.py"
+  ],
+  "gold_symbols": [
+    "Choice.convert"
+  ],
+  "category": "propagation",
+  "difficulty": "medium",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "public_api",
+  "entry_points": [],
+  "surface_symbols": [
+    "Choice",
+    "command",
+    "option"
+  ],
+  "surface_files": [
+    "src/click/decorators.py",
+    "src/click/types.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null
+}

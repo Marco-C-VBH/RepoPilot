@@ -51,6 +51,7 @@ _IDENT_RE = re.compile(
     r")"
 )
 _BARE_RE = re.compile(r"(?<![\w.])([A-Za-z_][\w]*)(?![\w.])")
+_PYTHON_FENCES = frozenset({"python", "py", "python3", "pycon"})
 _TRACEBACK_RE = re.compile(r'File\s+"[^"\n]+\.py"|[\w./-]+\.py(?::\d+|,\s*line\s+\d+)')
 _WORD_RE = re.compile(r"[A-Za-z][a-z\d]+|[A-Z]+(?![a-z])|\d+")
 _STOP_TOKENS = frozenset(
@@ -117,17 +118,26 @@ class Mention:
 def mentions(report: str) -> list[Mention]:
     """Identifier-shaped spans of ``report``, in order, one per position.
 
-    Inside back-ticks and fenced blocks every identifier counts; in prose only
+    Inside back-ticks and Python fenced blocks every identifier counts; in
+    prose and in other fenced blocks (a shell transcript, program output) only
     dotted names, snake_case, private and CamelCase words and calls do (a bare
     word like "format" in a sentence is English until it is quoted).
     """
     found: dict[int, Mention] = {}
     code_regions: list[tuple[int, int]] = []
+    output_regions: list[tuple[int, int]] = []
     for fence in _FENCE_RE.finditer(report):
         full = fence.group(0)
+        first_line = full[3:].split("\n", 1)[0].strip().lower()
         inner_start = full.find("\n") + 1 if "\n" in full else 3
         inner_end = max(inner_start, len(full) - 3)
-        code_regions.append((fence.start() + inner_start, fence.start() + inner_end))
+        region = (fence.start() + inner_start, fence.start() + inner_end)
+        # A Python block is code; a shell transcript or plain output block is
+        # prose ("Error: Got unexpected extra argument" names no symbol).
+        if first_line in _PYTHON_FENCES:
+            code_regions.append(region)
+        else:
+            output_regions.append(region)
     fenced_out = _FENCE_RE.sub(lambda m: " " * len(m.group(0)), report)
     for span in _CODE_SPAN_RE.finditer(fenced_out):
         code_regions.append((span.start(1), span.end(1)))
@@ -135,6 +145,10 @@ def mentions(report: str) -> list[Mention]:
         body = report[start:end]
         for m in _BARE_RE.finditer(body):
             _add(found, m.group(1), start + m.start(1), True)
+        for m in _IDENT_RE.finditer(body):
+            _add(found, m.group(1), start + m.start(1), True)
+    for start, end in output_regions:
+        body = report[start:end]
         for m in _IDENT_RE.finditer(body):
             _add(found, m.group(1), start + m.start(1), True)
     prose = _CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), fenced_out)
@@ -163,7 +177,9 @@ class SymbolTable:
     symbols: tuple[Symbol, ...]
 
     def __post_init__(self) -> None:
-        self._source = [s for s in self.symbols if not is_test_path(s.path)]
+        self._source = [
+            s for s in self.symbols if not is_test_path(s.path) and not is_ancillary_path(s.path)
+        ]
         self._by_name: dict[str, list[Symbol]] = {}
         self._by_qual: dict[str, list[Symbol]] = {}
         for s in self._source:
@@ -220,6 +236,36 @@ class SymbolTable:
             if out:
                 break  # the most specific candidate that resolves wins
         return out
+
+
+_ANCILLARY_DIRS = frozenset({"examples", "example", "docs", "doc", "benchmarks", "scripts"})
+
+
+def is_ancillary_path(path: str) -> bool:
+    """Examples, docs and scripts define symbols too, but they are not the library:
+    a report's ``cli`` should not resolve to ``examples/naval/naval.py``."""
+    return bool(set(path.split("/")[:-1]) & _ANCILLARY_DIRS)
+
+
+_DEF_RE = re.compile(r"^\s*(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)", re.MULTILINE)
+_CLASS_RE = re.compile(r"^\s*class\s+(\w+)", re.MULTILINE)
+_ASSIGN_RE = re.compile(r"^\s*(\w+)\s*(?::[^=\n]+)?=(?!=)", re.MULTILINE)
+
+
+def user_defined_names(report: str) -> set[str]:
+    """Names the report's own code defines -- its ``def cli(greeting, name)``, its
+    classes, its assignments -- which are the user's, not the repository's."""
+    names: set[str] = set()
+    for m in _DEF_RE.finditer(report):
+        names.add(m.group(1))
+        for param in m.group(2).split(","):
+            param = param.strip().lstrip("*").split(":")[0].split("=")[0].strip()
+            if param:
+                names.add(param)
+    names.update(m.group(1) for m in _CLASS_RE.finditer(report))
+    names.update(m.group(1) for m in _ASSIGN_RE.finditer(report))
+    names.discard("self")
+    return names
 
 
 def is_private(symbol: Symbol) -> bool:
@@ -317,9 +363,16 @@ def audit_report(
     violations: list[str] = []
     warnings: list[str] = []
     gold_names = _gold_names(gold_symbols)
+    own = user_defined_names(report)
     resolved: list[Resolved] = []
     for mention in mentions(report):
-        symbols = tuple(table.resolve(mention.text))
+        # A bare name the report's own code defines is the user's; a dotted or
+        # qualified use still resolves (``click.echo`` is the library's even if
+        # the user also has a variable called ``echo``).
+        if "." not in mention.text and mention.text in own:
+            symbols: tuple[Symbol, ...] = ()
+        else:
+            symbols = tuple(table.resolve(mention.text))
         resolved.append(Resolved(mention, symbols))
 
     if level is not ReportLevel.INTERNAL:
@@ -427,9 +480,13 @@ def redact(
     Entry points are redacted too: arm B′ measures what the identifiers were
     worth, all of them.
     """
+    own = user_defined_names(report)
     resolved = [
         r
-        for r in (Resolved(m, tuple(table.resolve(m.text))) for m in mentions(report))
+        for r in (
+            Resolved(m, () if "." not in m.text and m.text in own else tuple(table.resolve(m.text)))
+            for m in mentions(report)
+        )
         if r.symbols
     ]
     if not resolved and not gold_files:

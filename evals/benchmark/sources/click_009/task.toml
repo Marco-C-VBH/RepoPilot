@@ -1,0 +1,19 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/click_009
+id = "click_009"
+repo = "https://github.com/pallets/click"
+commit = "9ce34f20d2370f2e298268227edf0ffce6b9725f"   # parent of the fix; between 8.2.0 and 8.2.1
+source = "real"                # the base commit is buggy; no bug.patch
+fix_commit = "4fd2fea0db423d242aedcae0a5f664efe0a93484"   # "Fix condition for setting flag value when type is provided" (#2930)
+hidden_pass_to_pass = true     # the transplanted upstream tests include cases that pass with the bug
+suite = "v1"
+category = "wrong_condition"
+report_level = "public_api"
+entry_points = []
+test_command = "pytest tests/test_options.py"
+authored_difficulty = "hard"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

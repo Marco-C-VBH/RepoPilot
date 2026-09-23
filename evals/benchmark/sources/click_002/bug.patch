@@ -1,0 +1,12 @@
+diff --git a/src/click/parser.py b/src/click/parser.py
+index 1ea1f71..ddb4b40 100644
+--- a/src/click/parser.py
++++ b/src/click/parser.py
+@@ -453,7 +453,6 @@ class _OptionParser:
+                 option.obj._flag_needs_value
+                 and isinstance(next_rarg, str)
+                 and next_rarg[:1] in self._opt_prefixes
+-                and len(next_rarg) > 1
+             ):
+                 # The next arg looks like the start of an option, don't
+                 # use it as the value if omitting the value is allowed.

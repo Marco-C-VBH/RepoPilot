@@ -1,0 +1,58 @@
+diff --git a/tests/test_repopilot_click_004.py b/tests/test_repopilot_click_004.py
+new file mode 100644
+index 0000000..35e7fce
+--- /dev/null
++++ b/tests/test_repopilot_click_004.py
+@@ -0,0 +1,52 @@
++import enum
++
++import click
++from click.testing import CliRunner
++
++LOWER = {"token_normalize_func": lambda token: token.lower()}
++
++
++def test_case_sensitive_choice_under_a_normalizing_context():
++    @click.command(context_settings=LOWER)
++    @click.option("--level", type=click.Choice(["Debug", "Info"]))
++    def cli(level):
++        click.echo(level)
++
++    runner = CliRunner()
++    for spelling in ("Debug", "debug", "DEBUG"):
++        result = runner.invoke(cli, ["--level", spelling])
++        assert result.exit_code == 0, (spelling, result.output)
++        assert result.output == "Debug\n"
++
++    result = runner.invoke(cli, ["--level", "warn"])
++    assert result.exit_code == 2
++    assert "'warn' is not one of 'debug', 'info'." in result.output
++
++
++def test_normalization_that_rewrites_characters_applies_to_the_choices_too():
++    @click.command(context_settings={"token_normalize_func": lambda t: t.replace("-", "_")})
++    @click.argument("mode", type=click.Choice(["dry-run", "no-color"]))
++    def cli(mode):
++        click.echo(mode)
++
++    runner = CliRunner()
++    # The declared spelling and the normalized spelling both select the choice,
++    # and the original choice is what the command receives.
++    assert runner.invoke(cli, ["dry-run"]).output == "dry-run\n"
++    assert runner.invoke(cli, ["dry_run"]).output == "dry-run\n"
++    assert runner.invoke(cli, ["no_color"]).output == "no-color\n"
++
++
++def test_enum_choices_under_a_normalizing_context():
++    class Color(enum.Enum):
++        RED = 1
++        GREEN = 2
++
++    @click.command(context_settings=LOWER)
++    @click.option("--color", type=click.Choice(Color))
++    def cli(color):
++        click.echo(repr(color))
++
++    runner = CliRunner()
++    assert runner.invoke(cli, ["--color", "red"]).output == "<Color.RED: 1>\n"
++    assert runner.invoke(cli, ["--color", "GREEN"]).output == "<Color.GREEN: 2>\n"

@@ -14,6 +14,7 @@ from evals.benchmark.audit import (
     mentions,
     redact,
     site_notes,
+    user_defined_names,
 )
 
 # A pipeline-shaped package: a public entry point in __init__ that delegates to a
@@ -76,6 +77,17 @@ def test_mentions_find_code_spans_dotted_snake_and_camel_case() -> None:
     assert found["TTLCache"] is False
     assert found["sqlp"] is True and found["format"] is True  # from the fenced block
     assert "table" not in found and "words" not in found  # prose stays prose
+
+
+def test_output_fences_are_prose_and_python_fences_are_code() -> None:
+    report = (
+        "```\n$ cli --log -\nError: Got unexpected extra argument (-)\n```\n"
+        "```console\n$ prog run_it\nUsage: prog [OPTIONS]\n```\n"
+        "```python\nimport pkg\npkg.run(argument=1)\n```\n"
+    )
+    found = {m.text for m in mentions(report)}
+    assert "argument" in found and "pkg.run" in found and "run_it" in found  # code / snake
+    assert "Error" not in found and "Usage" not in found and "cli" not in found
 
 
 def test_mentions_skip_keywords_numbers_and_single_letters() -> None:
@@ -221,6 +233,32 @@ def test_ambiguous_names_are_warned_and_count_conservatively() -> None:
     )
     assert any("resolves to definitions in 2 files" in w for w in result.warnings)
     assert result.cross_module is False  # p/b.py is among the surface files
+
+
+def test_the_reports_own_definitions_and_ancillary_files_are_not_surface() -> None:
+    files = {
+        "pkg/__init__.py": "def command(f):\n    return f\n\n\ndef echo(x):\n    pass\n",
+        "pkg/core.py": "class Option:\n    def get_default(self, ctx):\n        pass\n",
+        "examples/demo/cli.py": "def cli():\n    pass\n\n\ndef name():\n    pass\n",
+        "docs/conf.py": "def setup(app):\n    pass\n",
+    }
+    table = SymbolTable.from_files(files)
+    assert table.resolve("cli") == [] and table.resolve("setup") == []  # not the library
+    report = (
+        "```python\nimport pkg\n\n@pkg.command\ndef cli(greeting, name='x'):\n"
+        "    pkg.echo(greeting)\n\nresult = cli()\n```\n`name` is ignored and `pkg.echo` prints."
+    )
+    result = audit_report(
+        report,
+        table,
+        gold_files=["pkg/core.py"],
+        gold_symbols=["Option.get_default"],
+        report_level="public_api",
+    )
+    assert result.ok
+    assert result.surface_symbols == ("command", "echo")  # not cli, greeting, name, result
+    assert result.cross_module is True
+    assert user_defined_names(report) == {"cli", "greeting", "name", "result"}
 
 
 # -- redaction ----------------------------------------------------------------------

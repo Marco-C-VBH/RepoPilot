@@ -1,0 +1,72 @@
+diff --git a/tests/test_repopilot_click_008.py b/tests/test_repopilot_click_008.py
+new file mode 100644
+index 0000000..931fc17
+--- /dev/null
++++ b/tests/test_repopilot_click_008.py
+@@ -0,0 +1,66 @@
++import click
++from click.testing import CliRunner
++
++
++def test_paragraphs_after_an_indented_one_wrap_at_the_normal_indent():
++    @click.command(context_settings={"terminal_width": 60})
++    def cli():
++        """Sync the local checkout with the server.
++
++            Indented note: this paragraph keeps its indentation.
++
++        This paragraph is long enough that the formatter has to wrap it onto a second and a third line at the configured width.
++
++        \b
++        raw block line one
++        raw block line two
++
++        And so is this one, which should look exactly like the previous wrapped paragraph in the help output.
++        """
++
++    result = CliRunner().invoke(cli, ["--help"])
++    assert result.exit_code == 0, result.output
++    assert result.output == (
++        "Usage: cli [OPTIONS]\n"
++        "\n"
++        "  Sync the local checkout with the server.\n"
++        "\n"
++        "      Indented note: this paragraph keeps its indentation.\n"
++        "\n"
++        "  This paragraph is long enough that the formatter has to\n"
++        "  wrap it onto a second and a third line at the configured\n"
++        "  width.\n"
++        "\n"
++        "  raw block line one\n"
++        "  raw block line two\n"
++        "\n"
++        "  And so is this one, which should look exactly like the\n"
++        "  previous wrapped paragraph in the help output.\n"
++        "\n"
++        "Options:\n"
++        "  --help  Show this message and exit.\n"
++    )
++
++
++def test_wrap_text_indent_does_not_leak_between_paragraphs():
++    text = (
++        "First paragraph that is long enough to wrap at a narrow width.\n"
++        "\n"
++        "    An indented note.\n"
++        "\n"
++        "Second paragraph that is also long enough to wrap at a narrow width."
++    )
++    assert click.wrap_text(text, 30, preserve_paragraphs=True) == (
++        "First paragraph that is long\n"
++        "enough to wrap at a narrow\n"
++        "width.\n"
++        "\n"
++        "    An indented note.\n"
++        "\n"
++        "Second paragraph that is also\n"
++        "long enough to wrap at a\n"
++        "narrow width."
++    )
++    # Wrapping the same text twice with one helper call each gives the same result.
++    once = click.wrap_text(text, 30, preserve_paragraphs=True)
++    assert click.wrap_text(text, 30, preserve_paragraphs=True) == once

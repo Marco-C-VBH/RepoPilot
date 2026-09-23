@@ -1,0 +1,13 @@
+diff --git a/src/click/parser.py b/src/click/parser.py
+index 1ea1f71..3196183 100644
+--- a/src/click/parser.py
++++ b/src/click/parser.py
+@@ -275,7 +275,7 @@ class _OptionParser:
+         The `obj` can be used to identify the option in the order list
+         that is returned from the parser.
+         """
+-        opts = [_normalize_opt(opt, self.ctx) for opt in opts]
++        opts = list(opts)
+         option = _Option(obj, opts, dest, action=action, nargs=nargs, const=const)
+         self._opt_prefixes.update(option.prefixes)
+         for opt in option._short_opts:

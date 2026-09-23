@@ -1,0 +1,13 @@
+diff --git a/src/click/types.py b/src/click/types.py
+index e71c1c2..1577e7c 100644
+--- a/src/click/types.py
++++ b/src/click/types.py
+@@ -342,7 +342,7 @@ class Choice(ParamType, t.Generic[ParamTypeValue]):
+         matched "original" choice.
+         """
+         normed_value = self.normalize_choice(choice=value, ctx=ctx)
+-        normalized_mapping = self._normalized_mapping(ctx=ctx)
++        normalized_mapping = self._normalized_mapping()
+ 
+         try:
+             return next(

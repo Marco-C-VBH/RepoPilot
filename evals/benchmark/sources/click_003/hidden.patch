@@ -1,0 +1,74 @@
+diff --git a/tests/test_repopilot_click_003.py b/tests/test_repopilot_click_003.py
+new file mode 100644
+index 0000000..9393406
+--- /dev/null
++++ b/tests/test_repopilot_click_003.py
+@@ -0,0 +1,68 @@
++import pytest
++
++import click
++from click.testing import CliRunner
++
++
++def _cli(param_type):
++    @click.command()
++    @click.option("--value", type=param_type)
++    def cli(value):
++        click.echo(repr(value))
++
++    return cli
++
++
++def test_open_bounds_exclude_the_bound_itself():
++    runner = CliRunner()
++    cli = _cli(click.FloatRange(0, 1, min_open=True, max_open=True))
++    assert runner.invoke(cli, ["--value", "0.5"]).output == "0.5\n"
++    for bad in ("0", "1", "-0.0"):
++        result = runner.invoke(cli, ["--value", bad])
++        assert result.exit_code == 2, (bad, result.output)
++        assert "is not in the range 0<x<1." in result.output, (bad, result.output)
++
++    cli = _cli(click.IntRange(1, 10, max_open=True))
++    assert runner.invoke(cli, ["--value", "9"]).output == "9\n"
++    assert runner.invoke(cli, ["--value", "1"]).output == "1\n"
++    result = runner.invoke(cli, ["--value", "10"])
++    assert result.exit_code == 2
++    assert "10 is not in the range 1<=x<10." in result.output
++
++
++def test_clamping_to_an_open_bound_lands_inside_the_range():
++    runner = CliRunner()
++    cli = _cli(click.IntRange(0, 5, min_open=True, max_open=True, clamp=True))
++    assert runner.invoke(cli, ["--value", "3"]).output == "3\n"
++    for given, expect in (("-3", "1"), ("0", "1"), ("5", "4"), ("9", "4")):
++        assert runner.invoke(cli, ["--value", given]).output == f"{expect}\n", given
++
++    cli = _cli(click.IntRange(0, 5, clamp=True))
++    for given, expect in (("-3", "0"), ("0", "0"), ("5", "5"), ("9", "5")):
++        assert runner.invoke(cli, ["--value", given]).output == f"{expect}\n", given
++
++
++@pytest.mark.parametrize(
++    ("param_type", "value", "expect"),
++    [
++        (click.IntRange(0, min_open=True, clamp=True), "-1", 1),
++        (click.IntRange(max=5, max_open=True, clamp=True), "6", 4),
++        (click.IntRange(0, 5, min_open=True, max_open=True, clamp=True), "5", 4),
++    ],
++)
++def test_clamping_directly(param_type, value, expect):
++    assert param_type(value) == expect
++
++
++@pytest.mark.parametrize(
++    ("param_type", "value"),
++    [
++        (click.IntRange(0, 5, min_open=True, max_open=True), "0"),
++        (click.IntRange(0, 5, min_open=True, max_open=True), "5"),
++        (click.FloatRange(0.5, 1.5, min_open=True, max_open=True), "0.5"),
++        (click.FloatRange(0.5, 1.5, min_open=True, max_open=True), "1.5"),
++    ],
++)
++def test_open_boundaries_are_rejected_directly(param_type, value):
++    with pytest.raises(click.BadParameter):
++        param_type(value)
