@@ -121,3 +121,23 @@ def test_report_is_written_even_when_nothing_is_collected(
     data = json.loads(report_path.read_text(encoding="utf-8"))
     assert data["exit_status"] == 5
     assert data["tests"] == {}
+
+
+def test_node_ids_are_relative_to_the_invocation_directory(
+    pytester: pytest.Pytester, report_path: Path
+) -> None:
+    """An ini file inside the test directory moves pytest's rootdir (rich keeps
+    ``tests/pytest.ini``); the report must still key on ``tests/test_x.py::...``."""
+    tests = pytester.mkdir("tests")
+    (tests / "pytest.ini").write_text("[pytest]\njunit_family=legacy\n")
+    (tests / "__init__.py").write_text("")
+    (tests / "test_inner.py").write_text("def test_a():\n    assert True\n")
+    (tests / "test_broken.py").write_text("import module_that_does_not_exist_xyz\n")
+    result = run_with_plugin(
+        pytester, "--continue-on-collection-errors", "tests/test_inner.py", "tests/test_broken.py"
+    )
+    assert result.ret != 0
+
+    data = json.loads(report_path.read_text(encoding="utf-8"))
+    assert data["tests"]["tests/test_inner.py::test_a"]["outcome"] == "passed"
+    assert data["collection_errors"] == ["tests/test_broken.py"]

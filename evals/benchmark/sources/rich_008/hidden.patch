@@ -1,0 +1,33 @@
+diff --git a/tests/test_repopilot_rich_008.py b/tests/test_repopilot_rich_008.py
+new file mode 100644
+index 0000000..a0775be
+--- /dev/null
++++ b/tests/test_repopilot_rich_008.py
+@@ -0,0 +1,27 @@
++import io
++
++from rich.console import Console
++
++
++def _print(obj) -> str:
++    console = Console(
++        file=io.StringIO(),
++        width=80,
++        force_terminal=False,
++        color_system=None,
++        legacy_windows=False,
++    )
++    console.print(obj)
++    return console.file.getvalue()
++
++
++def test_the_same_object_twice_in_a_list_is_printed_twice():
++    shared = {"id": 1}
++    assert _print([shared, shared]) == "[{'id': 1}, {'id': 1}]\n"
++    row = (1, 2)
++    assert _print([row, row, [3]]) == "[(1, 2), (1, 2), [3]]\n"
++
++
++def test_the_same_object_under_two_keys_is_printed_under_both():
++    shared = [1, 2]
++    assert _print({"a": shared, "b": shared}) == "{'a': [1, 2], 'b': [1, 2]}\n"

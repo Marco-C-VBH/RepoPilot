@@ -75,7 +75,9 @@ def test_mentions_find_code_spans_dotted_snake_and_camel_case() -> None:
     assert found["TokenList.token_next"] is False
     assert found["add_row"] is False
     assert found["TTLCache"] is False
-    assert found["sqlp"] is True and found["format"] is True  # from the fenced block
+    assert found["format"] is True  # from the fenced block
+    assert "sqlp" not in found  # an import's module path names a file, not a symbol
+    assert "reindent" not in found  # a keyword argument is a parameter, not a reference
     assert "table" not in found and "words" not in found  # prose stays prose
 
 
@@ -83,11 +85,30 @@ def test_output_fences_are_prose_and_python_fences_are_code() -> None:
     report = (
         "```\n$ cli --log -\nError: Got unexpected extra argument (-)\n```\n"
         "```console\n$ prog run_it\nUsage: prog [OPTIONS]\n```\n"
-        "```python\nimport pkg\npkg.run(argument=1)\n```\n"
+        "```python\nimport pkg\npkg.run(argument)\n```\n"
     )
     found = {m.text for m in mentions(report)}
     assert "argument" in found and "pkg.run" in found and "run_it" in found  # code / snake
     assert "Error" not in found and "Usage" not in found and "cli" not in found
+
+
+def test_string_literals_in_python_fences_are_data_not_mentions() -> None:
+    triple = "'" * 3
+    report = (
+        "```python\n"
+        'text = Text("name:\\tvalue", style="bold red")\n'
+        f"doc = {triple}multi\nline_value{triple}\n"
+        "print(len(text))\n"
+        "```\n"
+        '`Text("other_name")` in a code span is code too.\n'
+        '`broken("unterminated` does not tokenize and is scanned as is.\n'
+    )
+    found = [m.text for m in mentions(report)]
+    assert "Text" in found and "print" in found
+    assert "style" not in found  # a keyword argument
+    assert "name" not in found and "red" not in found and "line_value" not in found
+    assert "other_name" not in found
+    assert "unterminated" in found  # the fallback for fragments that do not tokenize
 
 
 def test_mentions_skip_keywords_numbers_and_single_letters() -> None:
@@ -200,6 +221,16 @@ def test_symptom_only_report_may_name_only_entry_points(table: SymbolTable) -> N
     )
     assert not bad.ok
     assert any("not an entry point" in v and "table.add_row" in v for v in bad.violations)
+    # Naming the class as an entry point brings its methods with it.
+    with_class = audit_report(
+        "`table.add_row('a')` then `console.print(table)` drops the last column.",
+        table,
+        gold_files=["sqlp/_impl.py"],
+        gold_symbols=["helper"],
+        report_level="symptom_only",
+        entry_points=["Console.print", "Table"],
+    )
+    assert with_class.ok, with_class.violations
 
 
 def test_symptom_only_report_naming_nothing_gets_the_entry_points_as_surface(
@@ -325,3 +356,25 @@ def test_find_changelog_picks_root_files_only() -> None:
     assert find_changelog(["docs/CHANGES.rst", "CHANGES.rst", "src/x.py"]) == "CHANGES.rst"
     assert find_changelog(["CHANGELOG.md"]) == "CHANGELOG.md"
     assert find_changelog(["README.md"]) is None
+
+
+def test_imports_of_the_changed_module_are_flagged(table: SymbolTable) -> None:
+    private = "```python\nfrom sqlp import _impl\n_impl.helper(1, True)\n```\n"
+    result = audit_report(
+        private,
+        table,
+        gold_files=["sqlp/_impl.py"],
+        gold_symbols=["helper"],
+        report_level="public_api",
+    )
+    assert any("imports the changed private module: 'sqlp._impl'" in v for v in result.violations)
+    public = "```python\nfrom sqlp.table import Table\nTable().add_row(1)\n```\n"
+    result = audit_report(
+        public,
+        table,
+        gold_files=["sqlp/table.py"],
+        gold_symbols=["Table._calculate_column_widths"],
+        report_level="public_api",
+    )
+    assert not any("imports the changed" in v for v in result.violations)
+    assert any("imports the changed module: 'sqlp.table'" in w for w in result.warnings)

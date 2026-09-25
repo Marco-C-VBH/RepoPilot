@@ -1,0 +1,46 @@
+diff --git a/tests/test_repopilot_rich_005.py b/tests/test_repopilot_rich_005.py
+new file mode 100644
+index 0000000..b35b483
+--- /dev/null
++++ b/tests/test_repopilot_rich_005.py
+@@ -0,0 +1,40 @@
++import io
++
++from rich.console import Console
++from rich.table import Table
++
++
++def _render(table: Table, width: int) -> str:
++    console = Console(
++        file=io.StringIO(),
++        width=width,
++        force_terminal=False,
++        color_system=None,
++        legacy_windows=False,
++    )
++    console.print(table)
++    return console.file.getvalue()
++
++
++def _table() -> Table:
++    table = Table(expand=True, box=None, show_header=False)
++    table.add_column(ratio=1)
++    table.add_column(ratio=1)
++    table.add_column(ratio=10)
++    table.add_row("a", "b", "cccccccccccccccc")
++    return table
++
++
++def test_narrow_ratio_columns_keep_room_for_their_content():
++    assert _render(_table(), 14) == " a  b  ccccc… \n"
++    assert _render(_table(), 20) == " a  b  ccccccccccc… \n"
++
++
++def test_a_ratio_column_is_never_thinner_than_its_padding():
++    table = Table(expand=True, box=None, show_header=False, padding=(0, 2))
++    table.add_column(ratio=1)
++    table.add_column(ratio=30)
++    table.add_row("x", "y" * 40)
++    output = _render(table, 30)
++    assert output.startswith("  x  ")
++    assert len(output.rstrip("\n")) == 30

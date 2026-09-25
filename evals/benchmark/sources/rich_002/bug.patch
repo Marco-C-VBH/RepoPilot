@@ -1,0 +1,15 @@
+diff --git a/rich/style.py b/rich/style.py
+index 835d06f..901e3be 100644
+--- a/rich/style.py
++++ b/rich/style.py
+@@ -744,8 +744,8 @@ class Style:
+             style._attributes & style._set_attributes
+         )
+         new_style._set_attributes = self._set_attributes | style._set_attributes
+-        new_style._link = style._link or self._link
+-        new_style._link_id = style._link_id or self._link_id
++        new_style._link = self._link or style._link
++        new_style._link_id = self._link_id or style._link_id
+         new_style._null = style._null
+         if self._meta and style._meta:
+             new_style._meta = dumps({**self.meta, **style.meta})

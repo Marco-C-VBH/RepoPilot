@@ -1,0 +1,44 @@
+diff --git a/tests/test_repopilot_rich_004.py b/tests/test_repopilot_rich_004.py
+new file mode 100644
+index 0000000..8a87fc2
+--- /dev/null
++++ b/tests/test_repopilot_rich_004.py
+@@ -0,0 +1,38 @@
++import io
++
++import pytest
++
++from rich.console import Console
++from rich.text import Span, Text
++
++
++def _print(markup: str) -> str:
++    console = Console(
++        file=io.StringIO(),
++        width=60,
++        force_terminal=False,
++        color_system=None,
++        legacy_windows=False,
++    )
++    console.print(markup)
++    return console.file.getvalue()
++
++
++@pytest.mark.parametrize(
++    ("markup", "expected"),
++    [
++        ("[bold red]alert[/red bold] done", "alert done\n"),
++        ("[bold]shout[/Bold]", "shout\n"),
++        ("[bold]a[/BOLD]", "a\n"),
++        ("[red on blue]x[/on blue red] y", "x y\n"),
++        ("[not bold italic]a[/italic not bold]", "a\n"),
++    ],
++)
++def test_closing_tags_match_regardless_of_word_order_and_case(markup, expected):
++    assert _print(markup) == expected
++
++
++def test_spans_are_the_same_whichever_spelling_closes_the_tag():
++    reordered = Text.from_markup("[bold red]alert[/red bold] done")
++    canonical = Text.from_markup("[bold red]alert[/bold red] done")
++    assert reordered.spans == canonical.spans == [Span(0, 5, "bold red")]

@@ -19,7 +19,13 @@ Report written to $REPOPILOT_REPORT_PATH::
 Outcome per test is the worst phase outcome: setup failure -> "error", call
 failure -> "failed", teardown failure -> "error", skipped / xfailed ->
 "skipped", otherwise "passed".  Exact pytest node ids are used as keys, so no
-classname-to-path guessing is needed downstream.
+classname-to-path guessing is needed downstream -- with one normalization: the
+path part of a node id is made relative to the directory pytest was invoked
+from (the repository root in the sandbox).  pytest itself writes node ids
+relative to its *rootdir*, which moves when a repository keeps an ini file in
+its test directory (rich has ``tests/pytest.ini``): ``pytest tests/test_x.py``
+then reports ``test_x.py::test_a``, and the task's ``tests/test_x.py::test_a``
+would never match.
 """
 
 import json
@@ -35,6 +41,20 @@ _LONGREPR_LIMIT = 8000
 
 _tests = {}
 _collection_errors = []
+_rootdir = None
+_invocation_dir = None
+
+
+def _normalize(nodeid):
+    """Make the path part of a node id relative to the invocation directory."""
+    if not nodeid or _rootdir is None or _invocation_dir is None:
+        return nodeid
+    path, sep, rest = nodeid.partition("::")
+    absolute = os.path.normpath(os.path.join(_rootdir, path))
+    relative = os.path.relpath(absolute, _invocation_dir)
+    if relative.startswith(".."):
+        return nodeid  # outside the invocation directory: leave it alone
+    return relative.replace(os.sep, "/") + sep + rest
 
 
 def _truncate(text, limit):
@@ -69,15 +89,22 @@ def _phase_outcome(report):
 
 
 def pytest_sessionstart(session):
+    global _rootdir, _invocation_dir
     _tests.clear()
     del _collection_errors[:]
+    config = session.config
+    rootpath = getattr(config, "rootpath", None) or getattr(config, "rootdir", None)
+    _rootdir = str(rootpath) if rootpath is not None else None
+    params = getattr(config, "invocation_params", None)
+    _invocation_dir = str(params.dir) if params is not None else os.getcwd()
 
 
 def pytest_runtest_logreport(report):
-    entry = _tests.get(report.nodeid)
+    nodeid = _normalize(report.nodeid)
+    entry = _tests.get(nodeid)
     if entry is None:
         entry = {"outcome": None, "duration": 0.0, "message": None, "longrepr": None}
-        _tests[report.nodeid] = entry
+        _tests[nodeid] = entry
     entry["duration"] += float(getattr(report, "duration", 0.0) or 0.0)
     outcome = _phase_outcome(report)
     if outcome is None:
@@ -89,7 +116,7 @@ def pytest_runtest_logreport(report):
 
 def pytest_collectreport(report):
     if report.failed:
-        nodeid = report.nodeid or "<collection>"
+        nodeid = _normalize(report.nodeid) or "<collection>"
         message, longrepr = _messages(report)
         _collection_errors.append(nodeid)
         _tests[nodeid] = {

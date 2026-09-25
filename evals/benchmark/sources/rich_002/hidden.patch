@@ -1,0 +1,53 @@
+diff --git a/tests/test_repopilot_rich_002.py b/tests/test_repopilot_rich_002.py
+new file mode 100644
+index 0000000..aaa8240
+--- /dev/null
++++ b/tests/test_repopilot_rich_002.py
+@@ -0,0 +1,47 @@
++import io
++import re
++
++from rich.console import Console
++from rich.text import Text
++
++
++def _console() -> Console:
++    return Console(
++        file=io.StringIO(),
++        width=80,
++        force_terminal=True,
++        color_system="truecolor",
++        legacy_windows=False,
++    )
++
++
++def _links(output: str) -> list[str]:
++    """The URL opened before each linked run of text, in order."""
++    return re.findall(r"\x1b]8;id=[^;]*;([^\x1b]+)\x1b\\", output)
++
++
++def test_inner_link_wins_over_the_enclosing_link_in_markup():
++    console = _console()
++    console.print(
++        "[link=https://outer.example]outer [link=https://inner.example]inner[/link] outer[/link]"
++    )
++    assert _links(console.file.getvalue()) == [
++        "https://outer.example",
++        "https://inner.example",
++        "https://outer.example",
++    ]
++
++
++def test_a_link_applied_later_replaces_the_earlier_one():
++    console = _console()
++    text = Text("one two three")
++    text.stylize("link https://first.example", 0, 13)
++    text.stylize("link https://second.example", 4, 7)
++    console.print(text)
++    assert _links(console.file.getvalue()) == [
++        "https://first.example",
++        "https://second.example",
++        "https://first.example",
++    ]
++    assert text.get_style_at_offset(console, 5).link == "https://second.example"
++    assert text.get_style_at_offset(console, 1).link == "https://first.example"

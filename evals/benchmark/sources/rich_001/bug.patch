@@ -1,0 +1,12 @@
+diff --git a/rich/text.py b/rich/text.py
+index b57d77c..929de68 100644
+--- a/rich/text.py
++++ b/rich/text.py
+@@ -1197,7 +1197,6 @@ class Text(JupyterMixin):
+             if span.start < max_offset
+         ]
+         self._text = [self.plain[:-amount]]
+-        self._length -= amount
+ 
+     def wrap(
+         self,

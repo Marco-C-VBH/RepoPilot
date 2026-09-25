@@ -1,0 +1,66 @@
+{
+  "id": "rich_003",
+  "repo": "https://github.com/Textualize/rich",
+  "base_commit": "2dca1b70359dac61e1bbfb6f14ebe19a5ab79c3d",
+  "source": "mutation",
+  "description": "A panel with a fixed height and vertical padding loses its bottom padding: the space goes to one more line of content instead.\n\n```python\nfrom rich.console import Console\nfrom rich.panel import Panel\n\nconsole = Console(width=20)\nconsole.print(Panel(\"a\\nb\\nc\\nd\\ne\\nf\", padding=(1, 2), height=7))\n```\n\n```\n╭──────────────────╮\n│                  │\n│  a               │\n│  b               │\n│  c               │\n│  d               │\n╰──────────────────╯\n```\n\nThe panel is 7 lines tall as asked, and the top padding line is there, but the last line inside the border is `d` rather than the blank line that `padding=(1, 2)` asks for below the content; the content is cut one line later than it should be. Expected inside the border: a blank line, `a`, `b`, `c`, a blank line. With `padding=(2, 1, 1, 1)` the two top lines are right and the one bottom line is missing in the same way, and without a `height=` the padding is complete on both sides.",
+  "bug_patch": "diff --git a/rich/padding.py b/rich/padding.py\nindex d1aa01b..2ee2b78 100644\n--- a/rich/padding.py\n+++ b/rich/padding.py\n@@ -92,7 +92,7 @@ class Padding(JupyterMixin):\n         render_options = options.update_width(width - self.left - self.right)\n         if render_options.height is not None:\n             render_options = render_options.update_height(\n-                height=render_options.height - self.top - self.bottom\n+                height=render_options.height - self.top\n             )\n         lines = console.render_lines(\n             self.renderable, render_options, style=style, pad=True\n",
+  "gold_patch": "diff --git a/rich/padding.py b/rich/padding.py\nindex 2ee2b78..d1aa01b 100644\n--- a/rich/padding.py\n+++ b/rich/padding.py\n@@ -92,7 +92,7 @@ class Padding(JupyterMixin):\n         render_options = options.update_width(width - self.left - self.right)\n         if render_options.height is not None:\n             render_options = render_options.update_height(\n-                height=render_options.height - self.top\n+                height=render_options.height - self.top - self.bottom\n             )\n         lines = console.render_lines(\n             self.renderable, render_options, style=style, pad=True\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_rich_003.py b/tests/test_repopilot_rich_003.py\nnew file mode 100644\nindex 0000000..319598e\n--- /dev/null\n+++ b/tests/test_repopilot_rich_003.py\n@@ -0,0 +1,41 @@\n+import io\n+\n+from rich.console import Console\n+from rich.padding import Padding\n+from rich.panel import Panel\n+\n+\n+def _render(renderable, width: int = 20, height=None) -> str:\n+    console = Console(\n+        file=io.StringIO(),\n+        width=width,\n+        force_terminal=False,\n+        color_system=None,\n+        legacy_windows=False,\n+    )\n+    console.print(renderable, height=height)\n+    return console.file.getvalue()\n+\n+\n+def test_panel_with_padding_and_a_fixed_height_keeps_its_bottom_padding():\n+    output = _render(Panel(\"a\\nb\\nc\\nd\\ne\\nf\", padding=(1, 2), height=7))\n+    assert output == (\n+        \"╭──────────────────╮\\n\"\n+        \"│                  │\\n\"\n+        \"│  a               │\\n\"\n+        \"│  b               │\\n\"\n+        \"│  c               │\\n\"\n+        \"│                  │\\n\"\n+        \"╰──────────────────╯\\n\"\n+    )\n+\n+\n+def test_padding_with_a_height_fills_exactly_that_height():\n+    output = _render(Padding(\"a\\nb\\nc\\nd\\ne\", (2, 1, 1, 1)), width=10, height=5)\n+    assert output == (\n+        \"          \\n\"\n+        \"          \\n\"\n+        \" a        \\n\"\n+        \" b        \\n\"\n+        \"          \\n\"\n+    )\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_rich_003.py::test_padding_with_a_height_fills_exactly_that_height",
+    "tests/test_repopilot_rich_003.py::test_panel_with_padding_and_a_fixed_height_keeps_its_bottom_padding"
+  ],
+  "pass_to_pass": [
+    "tests/test_padding.py::test_expand_false",
+    "tests/test_padding.py::test_indent",
+    "tests/test_padding.py::test_repr",
+    "tests/test_padding.py::test_rich_console",
+    "tests/test_padding.py::test_unpack",
+    "tests/test_panel.py::test_console_width",
+    "tests/test_panel.py::test_fixed_width",
+    "tests/test_panel.py::test_render_panel[panel0-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World                                    \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel1-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World\\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel2-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World\\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel3-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello,\\u2502\\n\\u2502World \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel4-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\u2502\\n\\u2502\\u2502Hello, World                                  \\u2502\\u2502\\n\\u2502\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel5-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500 FOO \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World                                    \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel6-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World                                    \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500 FOO \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_size",
+    "tests/test_panel.py::test_title_text",
+    "tests/test_panel.py::test_title_text_with_border_color",
+    "tests/test_panel.py::test_title_text_with_panel_background"
+  ],
+  "test_command": "pytest tests/test_padding.py tests/test_panel.py",
+  "gold_files": [
+    "rich/padding.py"
+  ],
+  "gold_symbols": [
+    "Padding.__rich_console__"
+  ],
+  "category": "off_by_one",
+  "difficulty": "hard",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "symptom_only",
+  "entry_points": [
+    "Panel",
+    "Console.print"
+  ],
+  "surface_symbols": [
+    "Console",
+    "Console.print",
+    "Panel"
+  ],
+  "surface_files": [
+    "rich/console.py",
+    "rich/panel.py"
+  ],
+  "cross_module": true,
+  "fix_commit": null,
+  "hidden_pass_to_pass": false
+}

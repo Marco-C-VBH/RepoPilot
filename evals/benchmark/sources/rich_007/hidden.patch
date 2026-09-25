@@ -1,0 +1,50 @@
+diff --git a/tests/test_repopilot_rich_007.py b/tests/test_repopilot_rich_007.py
+new file mode 100644
+index 0000000..d5e7eae
+--- /dev/null
++++ b/tests/test_repopilot_rich_007.py
+@@ -0,0 +1,44 @@
++import io
++import re
++
++from rich.console import Console
++from rich.text import Text
++
++ANSI = "plain \x1b[1mbold\x1b[0m \x1b]8;;https://example.com\x1b\\linked\x1b]8;;\x1b\\ end"
++
++
++def _console() -> Console:
++    return Console(
++        file=io.StringIO(),
++        record=True,
++        width=40,
++        force_terminal=True,
++        color_system="truecolor",
++        legacy_windows=False,
++    )
++
++
++def test_a_decoded_hyperlink_ends_where_the_ansi_link_ended():
++    console = _console()
++    text = Text.from_ansi(ANSI)
++    console.print(text)
++    output = console.file.getvalue()
++    # One link, around "linked" only; " end" is printed outside any link.
++    assert output.count("https://example.com") == 1
++    assert re.search(r"https://example.com\x1b\\linked\x1b]8;;\x1b\\ end", output)
++
++
++def test_a_decoded_hyperlink_survives_html_export():
++    console = _console()
++    console.print(Text.from_ansi(ANSI))
++    html = console.export_html(inline_styles=True)
++    assert re.findall(r'href="([^"]+)"', html) == ["https://example.com"]
++
++
++def test_the_style_after_the_link_is_not_the_linked_style():
++    text = Text.from_ansi(ANSI)
++    linked = text.get_style_at_offset(_console(), 12)
++    after = text.get_style_at_offset(_console(), 18)
++    assert linked.link == "https://example.com"
++    assert after.link is None
++    assert linked != after

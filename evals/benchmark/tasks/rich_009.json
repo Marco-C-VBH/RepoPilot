@@ -1,0 +1,61 @@
+{
+  "id": "rich_009",
+  "repo": "https://github.com/Textualize/rich",
+  "base_commit": "69e1618f1f3aae6589cd6210d9d318ab0cdf91da",
+  "source": "real",
+  "description": "When a panel has a background style, its title and subtitle are drawn without that background: the words sit in a gap of the terminal's own colour in the middle of the coloured border.\n\n```python\nfrom rich.console import Console\nfrom rich.panel import Panel\nfrom rich.text import Text\n\nconsole = Console(force_terminal=True, color_system=\"truecolor\", width=40)\nconsole.print(\n    Panel(\"Hello, World\", style=\"on blue\", title=Text(\"title\", style=\"red\"), subtitle=\"plain subtitle\")\n)\n```\n\nCaptured to a file, the top border line is:\n\n```\n\\x1b[44m╭─\\x1b[0m\\x1b[44m──────────────\\x1b[0m\\x1b[31m title \\x1b[0m\\x1b[44m───────────────\\x1b[0m\\x1b[44m─╮\\x1b[0m\n```\n\nThe border segments carry the blue background (`44`) and so does every cell of the body, but ` title ` is emitted with only its own red foreground (`31`), and ` plain subtitle ` on the bottom line has no style at all. Expected: the title keeps its red but on the blue background (`31;44`), and the plain subtitle gets the blue background, so that the whole panel is blue from edge to edge. A `border_style` alone (for example `border_style=\"green\"` with no panel style) is already applied to the title correctly; it is the panel-level style that does not reach it.",
+  "bug_patch": null,
+  "gold_patch": "diff --git a/rich/panel.py b/rich/panel.py\nindex d411e291..07587e3b 100644\n--- a/rich/panel.py\n+++ b/rich/panel.py\n@@ -146,8 +146,7 @@ class Panel(JupyterMixin):\n             Padding(self.renderable, _padding) if any(_padding) else self.renderable\n         )\n         style = console.get_style(self.style)\n-        partial_border_style = console.get_style(self.border_style)\n-        border_style = style + partial_border_style\n+        border_style = style + console.get_style(self.border_style)\n         width = (\n             options.max_width\n             if self.width is None\n@@ -206,7 +205,7 @@ class Panel(JupyterMixin):\n \n         title_text = self._title\n         if title_text is not None:\n-            title_text.stylize_before(partial_border_style)\n+            title_text.stylize_before(border_style)\n \n         child_width = (\n             width - 2\n@@ -255,7 +254,7 @@ class Panel(JupyterMixin):\n \n         subtitle_text = self._subtitle\n         if subtitle_text is not None:\n-            subtitle_text.stylize_before(partial_border_style)\n+            subtitle_text.stylize_before(border_style)\n \n         if subtitle_text is None or width <= 4:\n             yield Segment(box.get_bottom([width - 2]), border_style)\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_rich_009.py b/tests/test_repopilot_rich_009.py\nnew file mode 100644\nindex 0000000..e0f8fd6\n--- /dev/null\n+++ b/tests/test_repopilot_rich_009.py\n@@ -0,0 +1,29 @@\n+import io\n+\n+from rich.console import Console\n+from rich.panel import Panel\n+from rich.text import Text\n+\n+\n+def test_title_text_with_panel_background() -> None:\n+    \"\"\"Regression test for https://github.com/Textualize/rich/issues/3569\"\"\"\n+    panel = Panel(\n+        \"Hello, World\",\n+        style=\"on blue\",\n+        title=Text(\"title\", style=\"red\"),\n+        subtitle=Text(\"subtitle\", style=\"magenta bold\"),\n+    )\n+    console = Console(\n+        file=io.StringIO(),\n+        width=50,\n+        height=20,\n+        legacy_windows=False,\n+        force_terminal=True,\n+        color_system=\"truecolor\",\n+    )\n+    console.print(panel)\n+\n+    result = console.file.getvalue()\n+    print(repr(result))\n+    expected = \"\\x1b[44m╭─\\x1b[0m\\x1b[44m───────────────────\\x1b[0m\\x1b[31;44m title \\x1b[0m\\x1b[44m────────────────────\\x1b[0m\\x1b[44m─╮\\x1b[0m\\n\\x1b[44m│\\x1b[0m\\x1b[44m \\x1b[0m\\x1b[44mHello, World\\x1b[0m\\x1b[44m                                  \\x1b[0m\\x1b[44m \\x1b[0m\\x1b[44m│\\x1b[0m\\n\\x1b[44m╰─\\x1b[0m\\x1b[44m──────────────────\\x1b[0m\\x1b[1;35;44m subtitle \\x1b[0m\\x1b[44m──────────────────\\x1b[0m\\x1b[44m─╯\\x1b[0m\\n\"\n+    assert result == expected\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_rich_009.py::test_title_text_with_panel_background"
+  ],
+  "pass_to_pass": [
+    "tests/test_panel.py::test_console_width",
+    "tests/test_panel.py::test_fixed_width",
+    "tests/test_panel.py::test_render_panel[panel0-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World                                    \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel1-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World\\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel2-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World\\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel3-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello,\\u2502\\n\\u2502World \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel4-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\u2502\\n\\u2502\\u2502Hello, World                                  \\u2502\\u2502\\n\\u2502\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel5-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500 FOO \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World                                    \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_panel[panel6-\\u256d\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256e\\n\\u2502Hello, World                                    \\u2502\\n\\u2570\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500 FOO \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u256f\\n]",
+    "tests/test_panel.py::test_render_size",
+    "tests/test_panel.py::test_title_text",
+    "tests/test_panel.py::test_title_text_with_border_color"
+  ],
+  "test_command": "pytest tests/test_panel.py",
+  "gold_files": [
+    "rich/panel.py"
+  ],
+  "gold_symbols": [
+    "Panel.__rich_console__"
+  ],
+  "category": "propagation",
+  "difficulty": "hard",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "public_api",
+  "entry_points": [],
+  "surface_symbols": [
+    "Console",
+    "Console.print",
+    "Control.title",
+    "Panel",
+    "Text",
+    "Text.plain"
+  ],
+  "surface_files": [
+    "rich/console.py",
+    "rich/control.py",
+    "rich/panel.py",
+    "rich/text.py"
+  ],
+  "cross_module": false,
+  "fix_commit": "30e5ed61a6064220fe2ff40f4713463488ee6d07",
+  "hidden_pass_to_pass": false
+}

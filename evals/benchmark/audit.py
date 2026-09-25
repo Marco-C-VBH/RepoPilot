@@ -124,7 +124,7 @@ def mentions(report: str) -> list[Mention]:
     word like "format" in a sentence is English until it is quoted).
     """
     found: dict[int, Mention] = {}
-    code_regions: list[tuple[int, int]] = []
+    code_regions: list[tuple[int, int, bool]] = []  # (start, end, inline span?)
     output_regions: list[tuple[int, int]] = []
     for fence in _FENCE_RE.finditer(report):
         full = fence.group(0)
@@ -135,14 +135,16 @@ def mentions(report: str) -> list[Mention]:
         # A Python block is code; a shell transcript or plain output block is
         # prose ("Error: Got unexpected extra argument" names no symbol).
         if first_line in _PYTHON_FENCES:
-            code_regions.append(region)
+            code_regions.append((*region, False))
         else:
             output_regions.append(region)
     fenced_out = _FENCE_RE.sub(lambda m: " " * len(m.group(0)), report)
     for span in _CODE_SPAN_RE.finditer(fenced_out):
-        code_regions.append((span.start(1), span.end(1)))
-    for start, end in code_regions:
-        body = report[start:end]
+        code_regions.append((span.start(1), span.end(1), True))
+    for start, end, inline in code_regions:
+        body = _blank_keyword_arguments(
+            _blank_import_paths(_blank_string_literals(report[start:end])), inline=inline
+        )
         for m in _BARE_RE.finditer(body):
             _add(found, m.group(1), start + m.start(1), True)
         for m in _IDENT_RE.finditer(body):
@@ -155,6 +157,110 @@ def mentions(report: str) -> list[Mention]:
     for m in _IDENT_RE.finditer(prose):
         _add(found, m.group(1), m.start(1), False)
     return [found[k] for k in sorted(found)]
+
+
+def _blank_string_literals(code: str) -> str:
+    """``code`` with the contents of its string literals replaced by spaces.
+
+    ``Text("name:\\tvalue")`` mentions ``Text``, not ``name``; the literal's
+    words are data.  Offsets are preserved so mention positions stay valid.
+    Code that does not tokenize (a fragment, a back-ticked expression) is
+    returned unchanged.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(code).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return code
+    lines = code.split("\n")
+    middle = getattr(tokenize, "FSTRING_MIDDLE", None)
+
+    def blank(srow: int, scol: int, erow: int, ecol: int) -> None:
+        for row in range(srow, erow + 1):
+            line = lines[row - 1]
+            begin = scol if row == srow else 0
+            stop = ecol if row == erow else len(line)
+            if stop > begin:
+                lines[row - 1] = line[:begin] + " " * (stop - begin) + line[stop:]
+
+    for tok in tokens:
+        (srow, scol), (erow, ecol) = tok.start, tok.end
+        if tok.type == tokenize.STRING:
+            body = tok.string.lstrip("rbufRBUF")
+            prefix = len(tok.string) - len(body)
+            quote = 3 if body.startswith(('"""', "'''")) else 1
+            blank(srow, scol + prefix + quote, erow, ecol - quote)
+        elif middle is not None and tok.type == middle:
+            blank(srow, scol, erow, ecol)
+    return "\n".join(lines)
+
+
+_IMPORT_PATH_RE = re.compile(r"^(\s*from\s+)([\w.]+)(\s+import\b)", re.MULTILINE)
+_IMPORT_MODULES_RE = re.compile(r"^(\s*import\s+)([\w.]+(?:\s*,\s*[\w.]+)*)", re.MULTILINE)
+_KWARG_RE = re.compile(r"(?<![\w.])(\w+)(\s*=(?!=))")
+
+
+def _blank_import_paths(code: str) -> str:
+    """Blank the module path of ``from a.b import c`` / ``import a.b`` statements.
+
+    A module path names a file, not a symbol: ``from rich.console import
+    Console`` mentions ``Console``; ``rich.console`` is the file it lives in and
+    is checked separately (``import_paths``) against the changed files.
+    """
+
+    def blank(match: re.Match[str]) -> str:
+        head, path, tail = (
+            match.group(1),
+            match.group(2),
+            match.group(3) if match.lastindex == 3 else "",
+        )
+        return head + " " * len(path) + tail
+
+    code = _IMPORT_PATH_RE.sub(blank, code)
+    return _IMPORT_MODULES_RE.sub(blank, code)
+
+
+def _blank_keyword_arguments(code: str, *, inline: bool = False) -> str:
+    """Blank keyword-argument names (``Console(width=80)``): they are parameters
+    of the call, not references to a ``width`` symbol.  In a fenced block an
+    assignment target at the start of a line is left alone (it is the report's
+    own definition); in an inline code span (``padding=(1, 2)``) every
+    ``name=`` is a keyword."""
+    return "\n".join(
+        _blank_keyword_arguments_in_line(line, inline=inline) for line in code.split("\n")
+    )
+
+
+def _blank_keyword_arguments_in_line(line: str, *, inline: bool) -> str:
+    indent = len(line) - len(line.lstrip())
+
+    def blank(match: re.Match[str]) -> str:
+        if not inline and match.start(1) == indent:  # ``name = ...`` at the line start
+            return match.group(0)
+        return " " * len(match.group(1)) + match.group(2)
+
+    return _KWARG_RE.sub(blank, line)
+
+
+def import_paths(report: str) -> list[str]:
+    """Module paths imported by the report's code (``from a.b import c`` -> ``a.b``)."""
+    paths: list[str] = []
+    for fence in _FENCE_RE.finditer(report):
+        full = fence.group(0)
+        first_line = full[3:].split("\n", 1)[0].strip().lower()
+        if first_line not in _PYTHON_FENCES:
+            continue
+        for m in _IMPORT_PATH_RE.finditer(full):
+            package = m.group(2)
+            paths.append(package)
+            # ``from a.b import c`` may import the module ``a.b.c``: list it too.
+            rest = full[m.end() :].split("\n", 1)[0].strip("( )")
+            for name in rest.split(","):
+                name = name.strip().split(" as ")[0].strip()
+                if name and re.fullmatch(r"\w+", name):
+                    paths.append(f"{package}.{name}")
+        for m in _IMPORT_MODULES_RE.finditer(full):
+            paths.extend(part.strip().split(" as ")[0].strip() for part in m.group(2).split(","))
+    return paths
 
 
 def _add(found: dict[int, Mention], text: str, start: int, code: bool) -> None:
@@ -238,7 +344,9 @@ class SymbolTable:
         return out
 
 
-_ANCILLARY_DIRS = frozenset({"examples", "example", "docs", "doc", "benchmarks", "scripts"})
+_ANCILLARY_DIRS = frozenset(
+    {"examples", "example", "docs", "doc", "benchmarks", "scripts", "tools", "tests"}
+)
 
 
 def is_ancillary_path(path: str) -> bool:
@@ -327,6 +435,20 @@ def _gold_file_forms(gold_files: Iterable[str]) -> list[str]:
     return forms
 
 
+def _gold_module_forms(gold_files: Iterable[str]) -> set[str]:
+    """Dotted module paths of the changed files (``src/click/parser.py`` ->
+    ``click.parser``; ``rich/__init__.py`` -> ``rich``)."""
+    forms: set[str] = set()
+    for path in gold_files:
+        rel = path[4:] if path.startswith("src/") else path
+        if rel.endswith(".py"):
+            rel = rel[:-3]
+        if rel.endswith("/__init__"):
+            rel = rel[: -len("/__init__")]
+        forms.add(rel.replace("/", "."))
+    return forms
+
+
 def _sub_tokens(text: str) -> set[str]:
     return {
         t.lower() for t in _WORD_RE.findall(text) if len(t) >= 4 and t.lower() not in _STOP_TOKENS
@@ -345,6 +467,10 @@ def _allowed_entry_point(
             if s.qualname == ep or ep.endswith("." + s.qualname):
                 return True
             if s.kind == "class" and s.qualname == head and head != ep:
+                return True
+            # A class named as an entry point brings its methods with it: a
+            # report allowed to use ``Table`` may call ``table.add_row``.
+            if "." not in ep and s.qualname.startswith(ep + "."):
                 return True
     return False
 
@@ -379,6 +505,16 @@ def audit_report(
         for path in _gold_file_forms(gold_files):
             if path in report:
                 violations.append(f"names the changed file: {path!r}")
+                break
+        gold_modules = _gold_module_forms(gold_files)
+        for module in import_paths(report):
+            if module in gold_modules:
+                # A public module is where users import from (``from rich.text
+                # import Text``); a private one is a path only the fix knows.
+                if any(part.startswith("_") for part in module.split(".")):
+                    violations.append(f"imports the changed private module: {module!r}")
+                else:
+                    warnings.append(f"imports the changed module: {module!r} (same-module)")
                 break
         for m in _TRACEBACK_RE.finditer(report):
             violations.append(f"traceback frame or file:line reference: {m.group(0)!r}")

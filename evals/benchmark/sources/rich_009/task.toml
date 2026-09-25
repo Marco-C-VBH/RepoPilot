@@ -1,0 +1,18 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/rich_009
+id = "rich_009"
+repo = "https://github.com/Textualize/rich"
+commit = "69e1618f1f3aae6589cd6210d9d318ab0cdf91da"   # parent of the fix; between 14.0.0 and 14.1.0
+source = "real"                # the base commit is buggy; no bug.patch
+fix_commit = "30e5ed61a6064220fe2ff40f4713463488ee6d07"   # "fix(panel): fix title missing panel background" (#3569)
+suite = "v1"
+category = "propagation"
+report_level = "public_api"
+entry_points = []
+test_command = "pytest tests/test_panel.py"
+authored_difficulty = "medium"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

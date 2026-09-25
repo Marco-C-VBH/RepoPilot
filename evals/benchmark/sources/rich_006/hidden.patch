@@ -1,0 +1,53 @@
+diff --git a/tests/test_repopilot_rich_006.py b/tests/test_repopilot_rich_006.py
+new file mode 100644
+index 0000000..d54a1e0
+--- /dev/null
++++ b/tests/test_repopilot_rich_006.py
+@@ -0,0 +1,47 @@
++import io
++
++from rich.console import Console
++from rich.table import Table
++
++
++def _render(table: Table, width: int) -> str:
++    console = Console(
++        file=io.StringIO(),
++        width=width,
++        force_terminal=False,
++        color_system=None,
++        legacy_windows=False,
++    )
++    console.print(table)
++    return console.file.getvalue()
++
++
++def _table(**first_column) -> Table:
++    table = Table(box=None, show_header=False, padding=(0, 1))
++    table.add_column(no_wrap=True, **first_column)
++    table.add_column()
++    table.add_row("2024-01-01 12:00:00", "a long description that needs to wrap over several lines")
++    return table
++
++
++def test_a_no_wrap_column_keeps_its_width_when_the_table_is_squeezed():
++    assert _render(_table(), 40) == (
++        " 2024-01-01 12:00:00  a long            \n"
++        "                      description that  \n"
++        "                      needs to wrap     \n"
++        "                      over several      \n"
++        "                      lines             \n"
++    )
++
++
++def test_a_no_wrap_column_that_cannot_fit_is_cropped_not_wrapped():
++    assert _render(_table(width=8), 40) == (
++        " 2024-01…  a long description that      \n"
++        "           needs to wrap over several   \n"
++        "           lines                        \n"
++    )
++    assert _render(_table(width=8, overflow="crop"), 40) == (
++        " 2024-01-  a long description that      \n"
++        "           needs to wrap over several   \n"
++        "           lines                        \n"
++    )

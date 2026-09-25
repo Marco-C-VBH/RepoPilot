@@ -8,6 +8,45 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 14 · Node ids moved with pytest's rootdir, so a repository with `tests/pytest.ini` had no hidden tests
+
+**Date:** 2026-09-25 · **Area:** sandbox plugin × task authoring · **Severity:** medium
+(caught by the cloud pre-check of the first rich task; would have failed every
+rich task in `make_task` with "hidden test file … was not collected")
+
+**Symptom.** The pre-check of `rich_001` listed its two hidden tests as
+*visible* failures and reported "hidden file not collected", although the
+tests ran and failed as intended. The junit report's ids were
+`test_repopilot_rich_001.py::…` — no `tests/` prefix.
+
+**Root cause.** pytest makes node ids relative to its *rootdir*, and the
+rootdir is the first ancestor of the test arguments that holds an ini file.
+rich keeps `tests/pytest.ini` (`junit_family=legacy`), so `pytest
+tests/test_x.py` run from the repository root has rootdir `tests/` and node ids
+without the directory. The task records hidden test files by repository path
+(`tests/test_repopilot_rich_001.py`), the sandbox plugin keyed its report on
+pytest's raw `report.nodeid`, and the two never matched. click, cachetools,
+tenacity and toolz keep their ini at the root, so nothing noticed for 23 tasks.
+
+**Fix.**
+
+- `repopilot/sandbox/repopilot_pytest_plugin.py`: at session start record
+  `config.rootpath` and `config.invocation_params.dir`; every node id's path
+  part is rewritten relative to the invocation directory (the repository root
+  in the sandbox). Ids of repositories whose rootdir already is the root are
+  unchanged, so no shipped task moves. The plugin is part of the base-image
+  hash, so the images rebuild once.
+- The cloud pre-check passes `--rootdir=<tree>` so its junit ids match.
+
+**Guard.** `tests/test_pytest_plugin.py::test_node_ids_are_relative_to_the_invocation_directory`
+builds a project with `tests/pytest.ini` and asserts the report keys on
+`tests/test_inner.py::test_a` and the collection error on
+`tests/test_broken.py`.
+
+**Lesson.** "Exact pytest node ids" are exact relative to something, and that
+something is chosen by the target repository, not by the harness. Any id the
+harness stores must be normalized to the repository root on the way in.
+
 ## 13 · The sandbox's pytest drifted and turned a target repository's test file into a collection error
 
 **Date:** 2026-09-25 · **Area:** sandbox × task authoring · **Severity:** medium

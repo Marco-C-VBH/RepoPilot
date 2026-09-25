@@ -1,0 +1,21 @@
+diff --git a/rich/table.py b/rich/table.py
+index 942175d..3fd181a 100644
+--- a/rich/table.py
++++ b/rich/table.py
+@@ -555,7 +555,7 @@ class Table(JupyterMixin):
+         if table_width > max_width:
+             widths = self._collapse_widths(
+                 widths,
+-                [(column.width is None and not column.no_wrap) for column in columns],
++                [(column.width is None) for column in columns],
+                 max_width,
+             )
+             table_width = sum(widths)
+@@ -821,7 +821,6 @@ class Table(JupyterMixin):
+                 render_options = options.update(
+                     width=width,
+                     justify=column.justify,
+-                    no_wrap=column.no_wrap,
+                     overflow=column.overflow,
+                     height=None,
+                     highlight=column.highlight,

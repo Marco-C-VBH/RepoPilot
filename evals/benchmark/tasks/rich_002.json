@@ -1,0 +1,96 @@
+{
+  "id": "rich_002",
+  "repo": "https://github.com/Textualize/rich",
+  "base_commit": "2dca1b70359dac61e1bbfb6f14ebe19a5ab79c3d",
+  "source": "mutation",
+  "description": "A hyperlink nested inside another hyperlink is printed with the outer URL: the inner link never replaces the one already in effect.\n\n```python\nfrom rich.console import Console\n\nconsole = Console(force_terminal=True, color_system=\"truecolor\", width=80)\nconsole.print(\n    \"[link=https://outer.example]outer [link=https://inner.example]inner[/link] outer[/link]\"\n)\n```\n\nRun with output captured to a file, the OSC 8 sequences around the three runs of text carry these URLs (link ids removed):\n\n```\nouter  -> https://outer.example\ninner  -> https://outer.example\n outer -> https://outer.example\n```\n\nThe middle run should point at `https://inner.example`. The same happens without markup: `Text.stylize(\"link https://first.example\", 0, 13)` followed by `Text.stylize(\"link https://second.example\", 4, 7)` on `one two three` prints `two` with the first URL, although a style applied later normally wins over an earlier one, and it does for colours and attributes: `[red]a [blue]b[/blue] c[/red]` prints `b` in blue as expected. Only the link is stuck with whichever URL was set first.",
+  "bug_patch": "diff --git a/rich/style.py b/rich/style.py\nindex 835d06f..901e3be 100644\n--- a/rich/style.py\n+++ b/rich/style.py\n@@ -744,8 +744,8 @@ class Style:\n             style._attributes & style._set_attributes\n         )\n         new_style._set_attributes = self._set_attributes | style._set_attributes\n-        new_style._link = style._link or self._link\n-        new_style._link_id = style._link_id or self._link_id\n+        new_style._link = self._link or style._link\n+        new_style._link_id = self._link_id or style._link_id\n         new_style._null = style._null\n         if self._meta and style._meta:\n             new_style._meta = dumps({**self.meta, **style.meta})\n",
+  "gold_patch": "diff --git a/rich/style.py b/rich/style.py\nindex 901e3be..835d06f 100644\n--- a/rich/style.py\n+++ b/rich/style.py\n@@ -744,8 +744,8 @@ class Style:\n             style._attributes & style._set_attributes\n         )\n         new_style._set_attributes = self._set_attributes | style._set_attributes\n-        new_style._link = self._link or style._link\n-        new_style._link_id = self._link_id or style._link_id\n+        new_style._link = style._link or self._link\n+        new_style._link_id = style._link_id or self._link_id\n         new_style._null = style._null\n         if self._meta and style._meta:\n             new_style._meta = dumps({**self.meta, **style.meta})\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_rich_002.py b/tests/test_repopilot_rich_002.py\nnew file mode 100644\nindex 0000000..aaa8240\n--- /dev/null\n+++ b/tests/test_repopilot_rich_002.py\n@@ -0,0 +1,47 @@\n+import io\n+import re\n+\n+from rich.console import Console\n+from rich.text import Text\n+\n+\n+def _console() -> Console:\n+    return Console(\n+        file=io.StringIO(),\n+        width=80,\n+        force_terminal=True,\n+        color_system=\"truecolor\",\n+        legacy_windows=False,\n+    )\n+\n+\n+def _links(output: str) -> list[str]:\n+    \"\"\"The URL opened before each linked run of text, in order.\"\"\"\n+    return re.findall(r\"\\x1b]8;id=[^;]*;([^\\x1b]+)\\x1b\\\\\", output)\n+\n+\n+def test_inner_link_wins_over_the_enclosing_link_in_markup():\n+    console = _console()\n+    console.print(\n+        \"[link=https://outer.example]outer [link=https://inner.example]inner[/link] outer[/link]\"\n+    )\n+    assert _links(console.file.getvalue()) == [\n+        \"https://outer.example\",\n+        \"https://inner.example\",\n+        \"https://outer.example\",\n+    ]\n+\n+\n+def test_a_link_applied_later_replaces_the_earlier_one():\n+    console = _console()\n+    text = Text(\"one two three\")\n+    text.stylize(\"link https://first.example\", 0, 13)\n+    text.stylize(\"link https://second.example\", 4, 7)\n+    console.print(text)\n+    assert _links(console.file.getvalue()) == [\n+        \"https://first.example\",\n+        \"https://second.example\",\n+        \"https://first.example\",\n+    ]\n+    assert text.get_style_at_offset(console, 5).link == \"https://second.example\"\n+    assert text.get_style_at_offset(console, 1).link == \"https://first.example\"\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_rich_002.py::test_a_link_applied_later_replaces_the_earlier_one",
+    "tests/test_repopilot_rich_002.py::test_inner_link_wins_over_the_enclosing_link_in_markup"
+  ],
+  "pass_to_pass": [
+    "tests/test_markup.py::test_adjoint",
+    "tests/test_markup.py::test_escape",
+    "tests/test_markup.py::test_escape_backslash_end",
+    "tests/test_markup.py::test_escape_escape",
+    "tests/test_markup.py::test_events",
+    "tests/test_markup.py::test_events_broken",
+    "tests/test_markup.py::test_markup_error",
+    "tests/test_markup.py::test_markup_escape",
+    "tests/test_markup.py::test_parse",
+    "tests/test_markup.py::test_parse_link",
+    "tests/test_markup.py::test_re_match",
+    "tests/test_markup.py::test_re_no_match",
+    "tests/test_markup.py::test_render",
+    "tests/test_markup.py::test_render_close",
+    "tests/test_markup.py::test_render_close_ambiguous",
+    "tests/test_markup.py::test_render_combine",
+    "tests/test_markup.py::test_render_escape",
+    "tests/test_markup.py::test_render_link",
+    "tests/test_markup.py::test_render_meta",
+    "tests/test_markup.py::test_render_not_tags",
+    "tests/test_markup.py::test_render_overlap",
+    "tests/test_style.py::test_add",
+    "tests/test_style.py::test_ansi_codes",
+    "tests/test_style.py::test_background_style",
+    "tests/test_style.py::test_bgcolor_property",
+    "tests/test_style.py::test_bool",
+    "tests/test_style.py::test_chain",
+    "tests/test_style.py::test_clear_meta_and_links",
+    "tests/test_style.py::test_clear_meta_and_links_clears_hash",
+    "tests/test_style.py::test_color_property",
+    "tests/test_style.py::test_copy",
+    "tests/test_style.py::test_empty",
+    "tests/test_style.py::test_eq",
+    "tests/test_style.py::test_from_meta",
+    "tests/test_style.py::test_get_html_style",
+    "tests/test_style.py::test_hash",
+    "tests/test_style.py::test_iadd",
+    "tests/test_style.py::test_link_id",
+    "tests/test_style.py::test_meta",
+    "tests/test_style.py::test_on",
+    "tests/test_style.py::test_parse",
+    "tests/test_style.py::test_pick_first",
+    "tests/test_style.py::test_render",
+    "tests/test_style.py::test_repr",
+    "tests/test_style.py::test_str",
+    "tests/test_style.py::test_style_stack",
+    "tests/test_style.py::test_test",
+    "tests/test_style.py::test_without_color"
+  ],
+  "test_command": "pytest tests/test_style.py tests/test_markup.py",
+  "gold_files": [
+    "rich/style.py"
+  ],
+  "gold_symbols": [
+    "Style._add"
+  ],
+  "category": "ordering",
+  "difficulty": "hard",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "symptom_only",
+  "entry_points": [
+    "Console.print",
+    "Text.stylize"
+  ],
+  "surface_symbols": [
+    "Console",
+    "Console.print",
+    "Text.stylize"
+  ],
+  "surface_files": [
+    "rich/console.py",
+    "rich/text.py"
+  ],
+  "cross_module": true,
+  "fix_commit": null,
+  "hidden_pass_to_pass": false
+}

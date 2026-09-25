@@ -1,0 +1,13 @@
+diff --git a/rich/padding.py b/rich/padding.py
+index d1aa01b..2ee2b78 100644
+--- a/rich/padding.py
++++ b/rich/padding.py
+@@ -92,7 +92,7 @@ class Padding(JupyterMixin):
+         render_options = options.update_width(width - self.left - self.right)
+         if render_options.height is not None:
+             render_options = render_options.update_height(
+-                height=render_options.height - self.top - self.bottom
++                height=render_options.height - self.top
+             )
+         lines = console.render_lines(
+             self.renderable, render_options, style=style, pad=True

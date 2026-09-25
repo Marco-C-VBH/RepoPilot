@@ -1,0 +1,12 @@
+diff --git a/rich/markup.py b/rich/markup.py
+index bd9c05a..e4328aa 100644
+--- a/rich/markup.py
++++ b/rich/markup.py
+@@ -160,7 +160,6 @@ def render(
+                 style_name = tag.name[1:].strip()
+ 
+                 if style_name:  # explicit close
+-                    style_name = normalize(style_name)
+                     try:
+                         start, open_tag = pop_style(style_name)
+                     except KeyError:

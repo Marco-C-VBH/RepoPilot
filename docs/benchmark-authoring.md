@@ -231,10 +231,25 @@ repository symbol and is not an entry point at the `symptom_only` tier. It
 resolves the report's identifiers against the buggy tree's symbol table — the
 one `search_symbol` uses — so back-tick every identifier: in prose only dotted
 names, snake_case, CamelCase and calls are recognised, a bare `Table` in a
-sentence is English. What it resolves becomes `surface_symbols` /
-`surface_files`, and `cross_module` is "no surface file is a gold file"
-(defining files, not re-exporting ones: cachetools' `cached` is defined in
-`__init__.py`, so `cachetools_005` is cross-module against `_cached.py`).
+sentence is English. In code (fences and back-ticks) the contents of string
+literals, keyword-argument names (`Console(width=80)`) and the module path of
+an import are data, not references; an import of a *private* changed module
+(`from rich import _wrap`) is a violation, of a public one a same-module
+warning. At `symptom_only`, naming a class as an entry point covers its
+methods (`Table` allows `table.add_row`). Symbols under `examples/`, `docs/`,
+`scripts/`, `tools/`, `benchmarks/` and test paths never resolve. What it
+resolves becomes `surface_symbols` / `surface_files`, and `cross_module` is
+"no surface file is a gold file" (defining files, not re-exporting ones:
+cachetools' `cached` is defined in `__init__.py`, so `cachetools_005` is
+cross-module against `_cached.py`).
+
+One consequence of the audit that shapes site selection: the report may not
+name a changed symbol, so a site whose natural reproduction *is* the changed
+method (`Text.expand_tabs`, `Text.append`, `Table.add_row`) cannot be shipped
+at any v1 tier, however good the bug — rich's first real-fix candidate
+(`Text.append` looping on itself) was dropped for exactly this reason, and
+the mutation in `Text.expand_tabs` moved to `Text.right_crop`, which users
+reach through `set_length` and `remove_suffix`.
 
 **The site audit** (printed by `--dry-run` and by every build) lists comments
 and docstrings within eight lines of a hunk that share two or more sub-tokens
@@ -270,7 +285,11 @@ the clean tree then fails the mutated tests. `make_task` is immune (fresh
 exports in a fresh container). The sandbox pins `pytest==9.0.3`
 (`docker/base.Dockerfile`; issues.md #13); run the cloud pre-check with the same
 version, because a repository that tests with `filterwarnings = ["error"]`
-turns a newer pytest's deprecation warnings into collection errors.
+turns a newer pytest's deprecation warnings into collection errors. Node ids
+are always repository-relative: the sandbox plugin rewrites pytest's
+rootdir-relative ids (issues.md #14 — rich keeps `tests/pytest.ini`, which
+moves the rootdir into `tests/`), and a cloud pre-check must pass
+`--rootdir=<repo>` for the same reason.
 
 **Refreshing metadata.** `make_task SRC --refresh` re-runs only the git half —
 patch normalization, the audit, the derived fields — on an already-built task,
@@ -341,3 +360,59 @@ leak ablation is what tells whether that label means anything.
 Every task was pre-checked in the cloud before delivery (mutation applies,
 visible suite as claimed, hidden tests fail-to-pass, audit ok, real-task
 guards allowed); the Docker derivation on the Mac is the shipped record.
+
+## rich (v1, 9 tasks, built 2026-09-25)
+
+Pinned commit `2dca1b70` (14.1.0) for the mutations; the real task sits at the
+parent of its fix (14.0.0 + one commit). 856 tests in 6 s (24 skipped), needing
+pygments and markdown-it-py. Tests render into a `Console(file=io.StringIO(),
+width=N, force_terminal=…, color_system=…, legacy_windows=False)` and compare
+strings; every hidden test here fixes all four. `tests/test_text.py` covers
+`text.py` and, through `Text.wrap`, `_wrap.py` and `cells.py` (those two are
+pinned tightly — every boundary mutation tried there was visible);
+`tests/test_table.py` covers `table.py` and reaches `_ratio.py`;
+`tests/test_style.py`, `test_markup.py`, `test_panel.py`, `test_padding.py`,
+`test_pretty.py`, `test_ansi.py`, `test_layout.py` map one to one. Two
+upstream facts to know before choosing a site: `Style` caches its ANSI codes
+without the colour system (`Style.parse("#ff8800")` rendered on a truecolor
+console keeps truecolor codes on a standard one), so nothing near
+`Style.render` is a clean site; and `tests/pytest.ini` moves the pytest
+rootdir (issues.md #14).
+
+| id | site | fault | category | report | hidden-only | cross-module | shape |
+|---|---|---|---|---|---|---|---|
+| rich_001 | `text.py` `Text.right_crop` | the cached length not reduced when characters are cropped: a second `set_length` cuts instead of padding | cache_invalidation | public_api | yes (`test_card_render` also fails with the bug, but it fails in the sandbox with the fix too, so it is kept out of the command) | no | single_line |
+| rich_002 | `style.py` `Style._add` | link precedence inverted: the first link wins over one applied later (nested markup links, `stylize` twice) | ordering | symptom_only (`Console.print`, `Text.stylize`) | yes | yes | multi_line |
+| rich_003 | `padding.py` `Padding.__rich_console__` | bottom padding not subtracted from a fixed height: a panel with `height=` loses its bottom padding line | off_by_one | symptom_only (`Panel`, `Console.print`) | yes | yes | single_line |
+| rich_004 | `markup.py` `render` | closing tags not normalized: `[bold red]…[/red bold]` and `[/BOLD]` raise `MarkupError` | wrong_condition | public_api | no (2 visible) | yes | single_line |
+| rich_005 | `_ratio.py` `ratio_distribute` | the minimum floor dropped: an expanded table's ratio-1 column shrinks below its padding and its content vanishes | missing_check | symptom_only (`Table`, `Console.print`) | yes (the one failing visible test, `test_tools`, is outside the command) | yes | single_line |
+| rich_006 | `table.py` `Table._calculate_column_widths` + `Table._render` | `no_wrap` read at neither site: the column is squeezed and its text wraps | propagation | public_api | no (1 visible) | no | multi_site |
+| rich_007 | `style.py` `Style.update_link` | the cached hash copied from the source style: a linked style compares equal to the unlinked one, so `Text.from_ansi` links run on and `export_html` drops the href | cache_invalidation | public_api | no (1 visible, `test_ansi`) | yes | single_line |
+| rich_008 | `pretty.py` `traverse._traverse` | a container's id never popped from the visited set: a repeated (not cyclic) object prints as `...` | state_management | public_api | no (1 visible; `tests/test_pretty.py` imports `attr`, so the task installs `attrs`) | yes | multi_line |
+| rich_009 | `panel.py` `Panel.__rich_console__` — real fix `30e5ed61` (#3569), base `69e1618f` | the panel style not applied to title and subtitle (background missing) | propagation | public_api | yes | no | multi_site (3 hunks) |
+
+Against the plan (§4.3): area 1 (cells) and area 3 (`_wrap.divide_line`) were
+dropped — `test_cells.py` and the `test_wrap_*` cases pin every boundary, and
+the one hidden-only mutation found there was a no-op; area 2 (segment
+cropping) had two hidden-only sites but both only show with control segments,
+so it was replaced by the ANSI-decoding hash bug (rich_007); area 4 (ratio)
+moved from `ratio_resolve`, whose only clean mutation sits under a comment that
+states the fix ("we need to add the remainder to the following line"), to
+`ratio_distribute`; area 6 (markup) is as planned; area 7 (style combination)
+is the link precedence; area 8 (align/padding) is the padding height; the
+pretty-printer's visited set (rich_008) replaced the planned column-collapse
+propagation, which became the `no_wrap` two-site task (rich_006). The real fix
+is `30e5ed61` (panel title background, three hunks) rather than the planned
+`f2ee29531b` (`Text.append` looping on itself), whose report would have had to
+name the changed method. Flags for the nine: hidden-only 5, cross-module 6,
+symptom_only 3, multi-site 2 (no cross-file); categories cache_invalidation 2,
+propagation 2, ordering, off_by_one, wrong_condition, missing_check,
+state_management 1 each. Derived difficulty 5 hard / 4 medium (rich_001 counts as
+hidden-only once `test_card.py` is out of its command).
+
+Two things the Docker derivation showed that the cloud pre-check could not: a
+test file's third-party import (`attrs`) is a dev dependency the task image does
+not have unless `env.install` says so, and `tests/test_card.py::test_card_render`
+renders differently inside the sandbox (it fails there with and without the
+fix; the harness excludes such tests, but a permanently red visible test is a red
+herring for the agent, so it was dropped from rich_001's command).

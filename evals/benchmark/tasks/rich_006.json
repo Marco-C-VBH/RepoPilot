@@ -1,0 +1,67 @@
+{
+  "id": "rich_006",
+  "repo": "https://github.com/Textualize/rich",
+  "base_commit": "2dca1b70359dac61e1bbfb6f14ebe19a5ab79c3d",
+  "source": "mutation",
+  "description": "`no_wrap=True` on a table column has stopped doing anything: the column is squeezed like any other when the table is too wide, and its text wraps.\n\n```python\nfrom rich.console import Console\nfrom rich.table import Table\n\ntable = Table(box=None, show_header=False, padding=(0, 1))\ntable.add_column(no_wrap=True)\ntable.add_column()\ntable.add_row(\"2024-01-01 12:00:00\", \"a long description that needs to wrap over several lines\")\nConsole(width=40).print(table)\n```\n\n```\n 2024-01-01          a long description \n 12:00:00            that needs to wrap \n                     over several lines \n```\n\nThe timestamp column should keep its full 19 cells and only the second column should be narrowed and wrapped:\n\n```\n 2024-01-01 12:00:00  a long            \n                      description that  \n                      needs to wrap     \n                      over several      \n                      lines             \n```\n\nWhen the column cannot keep its width at all — the same column declared with `width=8` — its content should be cropped to a single line (`2024-01…`, or `2024-01-` with `overflow=\"crop\"`), but the rest of the text now wraps onto a second line (`12:00:00`) under it. Both halves of the option are lost: the column no longer resists being shrunk, and what is in it is wrapped anyway.",
+  "bug_patch": "diff --git a/rich/table.py b/rich/table.py\nindex 942175d..3fd181a 100644\n--- a/rich/table.py\n+++ b/rich/table.py\n@@ -555,7 +555,7 @@ class Table(JupyterMixin):\n         if table_width > max_width:\n             widths = self._collapse_widths(\n                 widths,\n-                [(column.width is None and not column.no_wrap) for column in columns],\n+                [(column.width is None) for column in columns],\n                 max_width,\n             )\n             table_width = sum(widths)\n@@ -821,7 +821,6 @@ class Table(JupyterMixin):\n                 render_options = options.update(\n                     width=width,\n                     justify=column.justify,\n-                    no_wrap=column.no_wrap,\n                     overflow=column.overflow,\n                     height=None,\n                     highlight=column.highlight,\n",
+  "gold_patch": "diff --git a/rich/table.py b/rich/table.py\nindex 3fd181a..942175d 100644\n--- a/rich/table.py\n+++ b/rich/table.py\n@@ -555,7 +555,7 @@ class Table(JupyterMixin):\n         if table_width > max_width:\n             widths = self._collapse_widths(\n                 widths,\n-                [(column.width is None) for column in columns],\n+                [(column.width is None and not column.no_wrap) for column in columns],\n                 max_width,\n             )\n             table_width = sum(widths)\n@@ -821,6 +821,7 @@ class Table(JupyterMixin):\n                 render_options = options.update(\n                     width=width,\n                     justify=column.justify,\n+                    no_wrap=column.no_wrap,\n                     overflow=column.overflow,\n                     height=None,\n                     highlight=column.highlight,\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_rich_006.py b/tests/test_repopilot_rich_006.py\nnew file mode 100644\nindex 0000000..d54a1e0\n--- /dev/null\n+++ b/tests/test_repopilot_rich_006.py\n@@ -0,0 +1,47 @@\n+import io\n+\n+from rich.console import Console\n+from rich.table import Table\n+\n+\n+def _render(table: Table, width: int) -> str:\n+    console = Console(\n+        file=io.StringIO(),\n+        width=width,\n+        force_terminal=False,\n+        color_system=None,\n+        legacy_windows=False,\n+    )\n+    console.print(table)\n+    return console.file.getvalue()\n+\n+\n+def _table(**first_column) -> Table:\n+    table = Table(box=None, show_header=False, padding=(0, 1))\n+    table.add_column(no_wrap=True, **first_column)\n+    table.add_column()\n+    table.add_row(\"2024-01-01 12:00:00\", \"a long description that needs to wrap over several lines\")\n+    return table\n+\n+\n+def test_a_no_wrap_column_keeps_its_width_when_the_table_is_squeezed():\n+    assert _render(_table(), 40) == (\n+        \" 2024-01-01 12:00:00  a long            \\n\"\n+        \"                      description that  \\n\"\n+        \"                      needs to wrap     \\n\"\n+        \"                      over several      \\n\"\n+        \"                      lines             \\n\"\n+    )\n+\n+\n+def test_a_no_wrap_column_that_cannot_fit_is_cropped_not_wrapped():\n+    assert _render(_table(width=8), 40) == (\n+        \" 2024-01…  a long description that      \\n\"\n+        \"           needs to wrap over several   \\n\"\n+        \"           lines                        \\n\"\n+    )\n+    assert _render(_table(width=8, overflow=\"crop\"), 40) == (\n+        \" 2024-01-  a long description that      \\n\"\n+        \"           needs to wrap over several   \\n\"\n+        \"           lines                        \\n\"\n+    )\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_rich_006.py::test_a_no_wrap_column_keeps_its_width_when_the_table_is_squeezed",
+    "tests/test_repopilot_rich_006.py::test_a_no_wrap_column_that_cannot_fit_is_cropped_not_wrapped",
+    "tests/test_table.py::test_render_table"
+  ],
+  "pass_to_pass": [
+    "tests/test_table.py::test_columns_highlight_added_by_add_row",
+    "tests/test_table.py::test_get_row_style",
+    "tests/test_table.py::test_init_append_column",
+    "tests/test_table.py::test_min_width",
+    "tests/test_table.py::test_no_columns",
+    "tests/test_table.py::test_not_renderable",
+    "tests/test_table.py::test_placement_table_box_elements[False-False-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Dec  2Skywalker2275M2375M 3\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n7Dec  8Last Jedi8262M81333M9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_placement_table_box_elements[False-True-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Dec  2Skywalker2275M2375M 3\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n4Dec  5Last Jedi5262M51333M6\\nmnnnnnonnnnnnnnnonnnnonnnnnp\\n7MONTH8NICKNAME 8COST8GROSS9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_placement_table_box_elements[True-False-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Month2Nickname 2Cost2Gross3\\nefffffgfffffffffgffffgfffffh\\n4Dec  5Skywalker5275M5375M 6\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n7Dec  8Last Jedi8262M81333M9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_placement_table_box_elements[True-True-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Month2Nickname 2Cost2Gross3\\nefffffgfffffffffgffffgfffffh\\n4Dec  5Skywalker5275M5375M 6\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n4Dec  5Last Jedi5262M51333M6\\nmnnnnnonnnnnnnnnonnnnonnnnnp\\n7MONTH8NICKNAME 8COST8GROSS9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_rich_measure",
+    "tests/test_table.py::test_section",
+    "tests/test_table.py::test_table_show_header_false_substitution[None- 1  2 \\n 3  4 \\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box1-\\u250c\\u2500\\u2500\\u2500\\u252c\\u2500\\u2500\\u2500\\u2510\\n\\u2502 1 \\u2502 2 \\u2502\\n\\u2502 3 \\u2502 4 \\u2502\\n\\u2514\\u2500\\u2500\\u2500\\u2534\\u2500\\u2500\\u2500\\u2518\\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box2-\\u250c\\u2500\\u2500\\u2500\\u252c\\u2500\\u2500\\u2500\\u2510\\n\\u2502 1 \\u2502 2 \\u2502\\n\\u2502 3 \\u2502 4 \\u2502\\n\\u2514\\u2500\\u2500\\u2500\\u2534\\u2500\\u2500\\u2500\\u2518\\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box3-    \\u2577    \\n  1 \\u2502 2  \\n  3 \\u2502 4  \\n    \\u2575    \\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box4-    \\u2577    \\n  1 \\u2502 2  \\n  3 \\u2502 4  \\n    \\u2575    \\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box5-+---+---+\\n| 1 | 2 |\\n| 3 | 4 |\\n+---+---+\\n]",
+    "tests/test_table.py::test_vertical_align_top"
+  ],
+  "test_command": "pytest tests/test_table.py",
+  "gold_files": [
+    "rich/table.py"
+  ],
+  "gold_symbols": [
+    "Table._calculate_column_widths",
+    "Table._render"
+  ],
+  "category": "propagation",
+  "difficulty": "medium",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "public_api",
+  "entry_points": [],
+  "surface_symbols": [
+    "Console",
+    "Table",
+    "Table.add_column",
+    "Table.add_row"
+  ],
+  "surface_files": [
+    "rich/console.py",
+    "rich/table.py"
+  ],
+  "cross_module": false,
+  "fix_commit": null,
+  "hidden_pass_to_pass": false
+}

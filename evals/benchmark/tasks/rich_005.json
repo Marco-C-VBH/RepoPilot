@@ -1,0 +1,70 @@
+{
+  "id": "rich_005",
+  "repo": "https://github.com/Textualize/rich",
+  "base_commit": "2dca1b70359dac61e1bbfb6f14ebe19a5ab79c3d",
+  "source": "mutation",
+  "description": "In an expanded table whose columns have ratios, a column with a small ratio can be made narrower than its own padding, and its content disappears.\n\n```python\nfrom rich.console import Console\nfrom rich.table import Table\n\ntable = Table(expand=True, box=None, show_header=False)\ntable.add_column(ratio=1)\ntable.add_column(ratio=1)\ntable.add_column(ratio=10)\ntable.add_row(\"a\", \"b\", \"cccccccccccccccc\")\nConsole(width=14).print(table)\n```\n\n```\n     ccccccc… \n```\n\n`a` and `b` are gone: the two ratio-1 columns are 2 cells wide, which their padding alone uses up, so nothing of the text is left to show. Until recently this printed ` a  b  ccccc… ` — a ratio column was never squeezed below the width needed for one character plus its padding (3 cells here), and the wide column absorbed the difference. The same happens at width 20 (` a  b  ccccccccccc… ` expected) and with `padding=(0, 2)`, where a ratio-1 column next to a ratio-30 one ends up narrower than the four cells of padding.",
+  "bug_patch": "diff --git a/rich/_ratio.py b/rich/_ratio.py\nindex 5fd5a38..431946f 100644\n--- a/rich/_ratio.py\n+++ b/rich/_ratio.py\n@@ -131,7 +131,7 @@ def ratio_distribute(\n         _minimums = minimums\n     for ratio, minimum in zip(ratios, _minimums):\n         if total_ratio > 0:\n-            distributed = max(minimum, ceil(ratio * total_remaining / total_ratio))\n+            distributed = ceil(ratio * total_remaining / total_ratio)\n         else:\n             distributed = total_remaining\n         append(distributed)\n",
+  "gold_patch": "diff --git a/rich/_ratio.py b/rich/_ratio.py\nindex 431946f..5fd5a38 100644\n--- a/rich/_ratio.py\n+++ b/rich/_ratio.py\n@@ -131,7 +131,7 @@ def ratio_distribute(\n         _minimums = minimums\n     for ratio, minimum in zip(ratios, _minimums):\n         if total_ratio > 0:\n-            distributed = ceil(ratio * total_remaining / total_ratio)\n+            distributed = max(minimum, ceil(ratio * total_remaining / total_ratio))\n         else:\n             distributed = total_remaining\n         append(distributed)\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_rich_005.py b/tests/test_repopilot_rich_005.py\nnew file mode 100644\nindex 0000000..b35b483\n--- /dev/null\n+++ b/tests/test_repopilot_rich_005.py\n@@ -0,0 +1,40 @@\n+import io\n+\n+from rich.console import Console\n+from rich.table import Table\n+\n+\n+def _render(table: Table, width: int) -> str:\n+    console = Console(\n+        file=io.StringIO(),\n+        width=width,\n+        force_terminal=False,\n+        color_system=None,\n+        legacy_windows=False,\n+    )\n+    console.print(table)\n+    return console.file.getvalue()\n+\n+\n+def _table() -> Table:\n+    table = Table(expand=True, box=None, show_header=False)\n+    table.add_column(ratio=1)\n+    table.add_column(ratio=1)\n+    table.add_column(ratio=10)\n+    table.add_row(\"a\", \"b\", \"cccccccccccccccc\")\n+    return table\n+\n+\n+def test_narrow_ratio_columns_keep_room_for_their_content():\n+    assert _render(_table(), 14) == \" a  b  ccccc… \\n\"\n+    assert _render(_table(), 20) == \" a  b  ccccccccccc… \\n\"\n+\n+\n+def test_a_ratio_column_is_never_thinner_than_its_padding():\n+    table = Table(expand=True, box=None, show_header=False, padding=(0, 2))\n+    table.add_column(ratio=1)\n+    table.add_column(ratio=30)\n+    table.add_row(\"x\", \"y\" * 40)\n+    output = _render(table, 30)\n+    assert output.startswith(\"  x  \")\n+    assert len(output.rstrip(\"\\n\")) == 30\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_rich_005.py::test_a_ratio_column_is_never_thinner_than_its_padding",
+    "tests/test_repopilot_rich_005.py::test_narrow_ratio_columns_keep_room_for_their_content"
+  ],
+  "pass_to_pass": [
+    "tests/test_columns.py::test_render",
+    "tests/test_table.py::test_columns_highlight_added_by_add_row",
+    "tests/test_table.py::test_get_row_style",
+    "tests/test_table.py::test_init_append_column",
+    "tests/test_table.py::test_min_width",
+    "tests/test_table.py::test_no_columns",
+    "tests/test_table.py::test_not_renderable",
+    "tests/test_table.py::test_placement_table_box_elements[False-False-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Dec  2Skywalker2275M2375M 3\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n7Dec  8Last Jedi8262M81333M9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_placement_table_box_elements[False-True-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Dec  2Skywalker2275M2375M 3\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n4Dec  5Last Jedi5262M51333M6\\nmnnnnnonnnnnnnnnonnnnonnnnnp\\n7MONTH8NICKNAME 8COST8GROSS9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_placement_table_box_elements[True-False-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Month2Nickname 2Cost2Gross3\\nefffffgfffffffffgffffgfffffh\\n4Dec  5Skywalker5275M5375M 6\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n7Dec  8Last Jedi8262M81333M9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_placement_table_box_elements[True-True-abbbbbcbbbbbbbbbcbbbbcbbbbbd\\n1Month2Nickname 2Cost2Gross3\\nefffffgfffffffffgffffgfffffh\\n4Dec  5Skywalker5275M5375M 6\\n4May  5Solo     5275M5393M 6\\nijjjjjkjjjjjjjjjkjjjjkjjjjjl\\n4Dec  5Last Jedi5262M51333M6\\nmnnnnnonnnnnnnnnonnnnonnnnnp\\n7MONTH8NICKNAME 8COST8GROSS9\\nqrrrrrsrrrrrrrrrsrrrrsrrrrrt\\n]",
+    "tests/test_table.py::test_render_table",
+    "tests/test_table.py::test_rich_measure",
+    "tests/test_table.py::test_section",
+    "tests/test_table.py::test_table_show_header_false_substitution[None- 1  2 \\n 3  4 \\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box1-\\u250c\\u2500\\u2500\\u2500\\u252c\\u2500\\u2500\\u2500\\u2510\\n\\u2502 1 \\u2502 2 \\u2502\\n\\u2502 3 \\u2502 4 \\u2502\\n\\u2514\\u2500\\u2500\\u2500\\u2534\\u2500\\u2500\\u2500\\u2518\\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box2-\\u250c\\u2500\\u2500\\u2500\\u252c\\u2500\\u2500\\u2500\\u2510\\n\\u2502 1 \\u2502 2 \\u2502\\n\\u2502 3 \\u2502 4 \\u2502\\n\\u2514\\u2500\\u2500\\u2500\\u2534\\u2500\\u2500\\u2500\\u2518\\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box3-    \\u2577    \\n  1 \\u2502 2  \\n  3 \\u2502 4  \\n    \\u2575    \\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box4-    \\u2577    \\n  1 \\u2502 2  \\n  3 \\u2502 4  \\n    \\u2575    \\n]",
+    "tests/test_table.py::test_table_show_header_false_substitution[box5-+---+---+\\n| 1 | 2 |\\n| 3 | 4 |\\n+---+---+\\n]",
+    "tests/test_table.py::test_vertical_align_top"
+  ],
+  "test_command": "pytest tests/test_table.py tests/test_columns.py",
+  "gold_files": [
+    "rich/_ratio.py"
+  ],
+  "gold_symbols": [
+    "ratio_distribute"
+  ],
+  "category": "missing_check",
+  "difficulty": "hard",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "symptom_only",
+  "entry_points": [
+    "Table",
+    "Console.print"
+  ],
+  "surface_symbols": [
+    "Console",
+    "Table",
+    "Table.add_column",
+    "Table.add_row"
+  ],
+  "surface_files": [
+    "rich/console.py",
+    "rich/table.py"
+  ],
+  "cross_module": true,
+  "fix_commit": null,
+  "hidden_pass_to_pass": false
+}

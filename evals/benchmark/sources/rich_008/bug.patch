@@ -1,0 +1,13 @@
+diff --git a/rich/pretty.py b/rich/pretty.py
+index 5c725c0..18d7890 100644
+--- a/rich/pretty.py
++++ b/rich/pretty.py
+@@ -863,8 +863,6 @@ def traverse(
+                     append(Node(value_repr=f"... +{num_items - max_length}", last=True))
+             else:
+                 node = Node(empty=empty, children=[], last=root)
+-
+-            pop_visited(obj_id)
+         else:
+             node = Node(value_repr=to_repr(obj), last=root)
+         node.is_tuple = type(obj) == tuple

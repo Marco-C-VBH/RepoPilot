@@ -1,0 +1,35 @@
+diff --git a/tests/test_repopilot_rich_001.py b/tests/test_repopilot_rich_001.py
+new file mode 100644
+index 0000000..d7b61ce
+--- /dev/null
++++ b/tests/test_repopilot_rich_001.py
+@@ -0,0 +1,29 @@
++from rich.text import Span, Text
++
++
++def test_length_tracks_set_length_and_can_grow_again():
++    text = Text("hello world")
++    text.set_length(5)
++    assert text.plain == "hello"
++    assert len(text) == 5
++    text.set_length(8)
++    assert text.plain == "hello   "
++    assert len(text) == 8
++
++
++def test_styles_appended_after_remove_suffix_land_on_the_right_characters():
++    text = Text("report.txt")
++    text.remove_suffix(".txt")
++    assert text.plain == "report"
++    assert len(text) == 6
++    text.append("!", "bold")
++    assert text.spans == [Span(6, 7, "bold")]
++
++
++def test_rstrip_end_keeps_the_length_in_step_with_the_text():
++    text = Text("abc     ")
++    text.rstrip_end(4)
++    assert text.plain == "abc "
++    assert len(text) == 4
++    text.stylize("italic", 0, len(text))
++    assert text.spans == [Span(0, 4, "italic")]

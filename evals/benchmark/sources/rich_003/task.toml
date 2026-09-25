@@ -1,0 +1,16 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/rich_003
+id = "rich_003"
+repo = "https://github.com/Textualize/rich"
+commit = "2dca1b70359dac61e1bbfb6f14ebe19a5ab79c3d"   # rich 14.1.0
+suite = "v1"
+category = "off_by_one"
+report_level = "symptom_only"
+entry_points = ["Panel", "Console.print"]
+test_command = "pytest tests/test_padding.py tests/test_panel.py"
+authored_difficulty = "hard"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

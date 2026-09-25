@@ -1,0 +1,47 @@
+diff --git a/tests/test_repopilot_rich_003.py b/tests/test_repopilot_rich_003.py
+new file mode 100644
+index 0000000..319598e
+--- /dev/null
++++ b/tests/test_repopilot_rich_003.py
+@@ -0,0 +1,41 @@
++import io
++
++from rich.console import Console
++from rich.padding import Padding
++from rich.panel import Panel
++
++
++def _render(renderable, width: int = 20, height=None) -> str:
++    console = Console(
++        file=io.StringIO(),
++        width=width,
++        force_terminal=False,
++        color_system=None,
++        legacy_windows=False,
++    )
++    console.print(renderable, height=height)
++    return console.file.getvalue()
++
++
++def test_panel_with_padding_and_a_fixed_height_keeps_its_bottom_padding():
++    output = _render(Panel("a\nb\nc\nd\ne\nf", padding=(1, 2), height=7))
++    assert output == (
++        "╭──────────────────╮\n"
++        "│                  │\n"
++        "│  a               │\n"
++        "│  b               │\n"
++        "│  c               │\n"
++        "│                  │\n"
++        "╰──────────────────╯\n"
++    )
++
++
++def test_padding_with_a_height_fills_exactly_that_height():
++    output = _render(Padding("a\nb\nc\nd\ne", (2, 1, 1, 1)), width=10, height=5)
++    assert output == (
++        "          \n"
++        "          \n"
++        " a        \n"
++        " b        \n"
++        "          \n"
++    )

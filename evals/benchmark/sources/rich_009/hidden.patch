@@ -1,0 +1,35 @@
+diff --git a/tests/test_repopilot_rich_009.py b/tests/test_repopilot_rich_009.py
+new file mode 100644
+index 0000000..e0f8fd6
+--- /dev/null
++++ b/tests/test_repopilot_rich_009.py
+@@ -0,0 +1,29 @@
++import io
++
++from rich.console import Console
++from rich.panel import Panel
++from rich.text import Text
++
++
++def test_title_text_with_panel_background() -> None:
++    """Regression test for https://github.com/Textualize/rich/issues/3569"""
++    panel = Panel(
++        "Hello, World",
++        style="on blue",
++        title=Text("title", style="red"),
++        subtitle=Text("subtitle", style="magenta bold"),
++    )
++    console = Console(
++        file=io.StringIO(),
++        width=50,
++        height=20,
++        legacy_windows=False,
++        force_terminal=True,
++        color_system="truecolor",
++    )
++    console.print(panel)
++
++    result = console.file.getvalue()
++    print(repr(result))
++    expected = "\x1b[44m╭─\x1b[0m\x1b[44m───────────────────\x1b[0m\x1b[31;44m title \x1b[0m\x1b[44m────────────────────\x1b[0m\x1b[44m─╮\x1b[0m\n\x1b[44m│\x1b[0m\x1b[44m \x1b[0m\x1b[44mHello, World\x1b[0m\x1b[44m                                  \x1b[0m\x1b[44m \x1b[0m\x1b[44m│\x1b[0m\n\x1b[44m╰─\x1b[0m\x1b[44m──────────────────\x1b[0m\x1b[1;35;44m subtitle \x1b[0m\x1b[44m──────────────────\x1b[0m\x1b[44m─╯\x1b[0m\n"
++    assert result == expected
