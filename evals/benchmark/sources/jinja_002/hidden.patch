@@ -1,0 +1,64 @@
+diff --git a/tests/test_repopilot_jinja_002.py b/tests/test_repopilot_jinja_002.py
+new file mode 100644
+index 0000000..adac36c
+--- /dev/null
++++ b/tests/test_repopilot_jinja_002.py
+@@ -0,0 +1,58 @@
++import pytest
++
++from jinja2 import DictLoader
++from jinja2 import Environment
++
++
++class LookupError_(Exception):
++    pass
++
++
++def make_env():
++    env = Environment(loader=DictLoader({"page": "{% if false %}{{ 'x'|lookup }}{% endif %}ok"}))
++
++    def lookup(value):
++        raise LookupError_(f"no entry for {value!r}")
++
++    env.filters["lookup"] = lookup
++    env.filters["first_key"] = lambda mapping: next(iter(mapping))
++    env.tests["registered"] = lambda name: {"a": 1}[name] == 1
++    return env
++
++
++def test_filter_error_in_dead_branch_does_not_break_loading():
++    env = make_env()
++    tmpl = env.from_string("{% if false %}{{ 'x'|lookup }}{% endif %}ok")
++    assert tmpl.render() == "ok"
++    assert env.get_template("page").render() == "ok"
++    # argument errors from constant folding stay deferred as before
++    assert env.from_string("{% if false %}{{ 'abc'|center('w') }}{% endif %}ok").render() == "ok"
++
++
++def test_filter_error_is_raised_when_the_branch_renders():
++    env = make_env()
++    tmpl = env.from_string("{% if flag %}{{ 'x'|lookup }}{% else %}no{% endif %}")
++    assert tmpl.render(flag=False) == "no"
++
++    with pytest.raises(LookupError_):
++        tmpl.render(flag=True)
++
++
++def test_filter_error_is_raised_at_render_time_not_compile_time():
++    env = make_env()
++    tmpl = env.from_string("{{ 'x'|lookup }}")
++
++    with pytest.raises(LookupError_):
++        tmpl.render()
++
++
++@pytest.mark.parametrize(
++    "source",
++    [
++        "{% if false %}{{ {}|first_key }}{% endif %}ok",
++        "{% if false %}{{ 'b' is registered }}{% endif %}ok",
++    ],
++)
++def test_other_error_types_from_constant_arguments(source):
++    env = make_env()
++    assert env.from_string(source).render() == "ok"

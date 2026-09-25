@@ -1,0 +1,16 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/jinja_004
+id = "jinja_004"
+repo = "https://github.com/pallets/jinja"
+commit = "15206881c006c79667fe5154fe80c01c65410679"   # jinja 3.1.6
+suite = "v1"
+category = "missing_check"
+report_level = "symptom_only"
+entry_points = ["Environment", "Template.render", "TemplateSyntaxError"]
+test_command = "pytest tests/test_lexnparse.py tests/test_core_tags.py"
+authored_difficulty = "medium"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

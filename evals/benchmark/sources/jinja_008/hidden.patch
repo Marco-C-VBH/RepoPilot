@@ -1,0 +1,56 @@
+diff --git a/tests/test_repopilot_jinja_008.py b/tests/test_repopilot_jinja_008.py
+new file mode 100644
+index 0000000..d76218d
+--- /dev/null
++++ b/tests/test_repopilot_jinja_008.py
+@@ -0,0 +1,50 @@
++from jinja2 import DictLoader
++from jinja2 import Environment
++
++
++def make_env():
++    return Environment(
++        loader=DictLoader(
++            {
++                "inc": "[{{ x }}{{ y }}]",
++                "mod": "{% macro show() %}<{{ x }}{{ y }}>{% endmacro %}",
++            }
++        )
++    )
++
++
++def test_include_sees_loop_variables():
++    tmpl = make_env().from_string("{% for x in [1, 2] %}{% include 'inc' %}{% endfor %}")
++    assert tmpl.render() == "[1][2]"
++
++
++def test_include_sees_with_and_block_variables():
++    env = make_env()
++    assert env.from_string("{% with x = 'w' %}{% include 'inc' %}{% endwith %}").render() == "[w]"
++    assert env.from_string("{% block b %}{% set x = 'b' %}{% include 'inc' %}{% endblock %}").render() == "[b]"
++
++
++def test_import_with_context_sees_loop_variables():
++    env = make_env()
++    tmpl = env.from_string(
++        "{% for x in [1, 2] %}{% import 'mod' as m with context %}{{ m.show() }}{% endfor %}"
++    )
++    assert tmpl.render() == "<1><2>"
++    tmpl = env.from_string(
++        "{% for x in [1] %}{% import 'mod' as m without context %}{{ m.show() }}{% endfor %}"
++    )
++    assert tmpl.render() == "<>"
++
++
++def test_from_import_with_context_sees_loop_variables():
++    tmpl = make_env().from_string(
++        "{% for x in [1, 2] %}{% from 'mod' import show with context %}{{ show() }}{% endfor %}"
++    )
++    assert tmpl.render() == "<1><2>"
++
++
++def test_import_with_context_sees_with_variables():
++    tmpl = make_env().from_string(
++        "{% with x = 'w' %}{% import 'mod' as m with context %}{{ m.show() }}{% endwith %}"
++    )
++    assert tmpl.render() == "<w>"

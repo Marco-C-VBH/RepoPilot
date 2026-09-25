@@ -1,0 +1,51 @@
+diff --git a/tests/test_repopilot_jinja_003.py b/tests/test_repopilot_jinja_003.py
+new file mode 100644
+index 0000000..c90021f
+--- /dev/null
++++ b/tests/test_repopilot_jinja_003.py
+@@ -0,0 +1,45 @@
++from jinja2 import DictLoader
++from jinja2 import Environment
++from jinja2.utils import LRUCache
++
++
++def test_template_cache_survives_a_reload_of_a_cached_template():
++    sources = {"a": "a1", "b": "b1", "c": "c1"}
++    env = Environment(loader=DictLoader(sources), cache_size=2)
++    assert env.get_template("a").render() == "a1"
++    assert env.get_template("b").render() == "b1"
++
++    sources["a"] = "a2"
++    assert env.get_template("a").render() == "a2"
++
++    assert env.get_template("c").render() == "c1"
++    assert env.get_template("b").render() == "b1"
++    assert env.get_template("a").render() == "a2"
++    assert env.get_template("c").render() == "c1"
++    assert sorted(name for _, name in env.cache.keys()) == ["a", "c"]
++
++
++def test_template_cache_evicts_the_least_recently_used_entry_after_a_reload():
++    sources = {"a": "a1", "b": "b1", "c": "c1"}
++    env = Environment(loader=DictLoader(sources), cache_size=2)
++    env.get_template("a")
++    env.get_template("b")
++    sources["b"] = "b2"
++    assert env.get_template("b").render() == "b2"
++    env.get_template("c")
++    assert sorted(name for _, name in env.cache.keys()) == ["b", "c"]
++
++
++def test_setting_an_existing_key_keeps_a_single_queue_entry():
++    cache = LRUCache(2)
++    cache["x"] = 1
++    cache["x"] = 2
++    cache["y"] = 3
++    cache["z"] = 4
++    assert cache.items() == [("z", 4), ("y", 3)]
++    assert "x" not in cache
++
++    cache["y"] = 5
++    cache["w"] = 6
++    assert cache.items() == [("w", 6), ("y", 5)]
++    assert len(cache) == 2

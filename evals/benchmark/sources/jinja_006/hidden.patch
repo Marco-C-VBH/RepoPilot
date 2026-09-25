@@ -1,0 +1,54 @@
+diff --git a/tests/test_repopilot_jinja_006.py b/tests/test_repopilot_jinja_006.py
+new file mode 100644
+index 0000000..687fe2d
+--- /dev/null
++++ b/tests/test_repopilot_jinja_006.py
+@@ -0,0 +1,48 @@
++import asyncio
++
++from jinja2 import Environment
++
++
++def rows():
++    yield from ["a", "b", "c"]
++
++
++async def async_rows():
++    for row in ["a", "b", "c"]:
++        yield row
++
++
++def test_length_after_last_on_a_generator():
++    tmpl = Environment().from_string(
++        "{% for x in items %}{{ loop.last }}:{{ loop.length }} {% endfor %}"
++    )
++    assert tmpl.render(items=rows()) == "False:3 False:3 True:3 "
++    assert tmpl.render(items=list(rows())) == "False:3 False:3 True:3 "
++
++
++def test_revindex_after_nextitem_on_a_generator():
++    tmpl = Environment().from_string(
++        "{% for x in items %}{{ loop.nextitem }}/{{ loop.revindex }}/{{ loop.revindex0 }} {% endfor %}"
++    )
++    assert tmpl.render(items=rows()) == "b/3/2 c/2/1 /1/0 "
++
++
++def test_countdown_on_a_generator_ends_at_one():
++    tmpl = Environment().from_string(
++        "{% for x in items %}{% if loop.last %}!{% endif %}{{ loop.revindex }} {% endfor %}"
++    )
++    assert tmpl.render(items=rows()) == "3 2 !1 "
++    assert tmpl.render(items=iter(["a"])) == "!1 "
++    # the length is right when it is computed before any lookahead
++    tmpl = Environment().from_string(
++        "{% for x in items %}{{ loop.length }}:{{ loop.last }} {% endfor %}"
++    )
++    assert tmpl.render(items=rows()) == "3:False 3:False 3:True "
++
++
++def test_length_after_last_on_an_async_generator():
++    tmpl = Environment(enable_async=True).from_string(
++        "{% for x in items %}{{ loop.last }}:{{ loop.length }}:{{ loop.revindex }} {% endfor %}"
++    )
++    assert asyncio.run(tmpl.render_async(items=async_rows())) == "False:3:3 False:3:2 True:3:1 "
++    assert asyncio.run(tmpl.render_async(items=rows())) == "False:3:3 False:3:2 True:3:1 "

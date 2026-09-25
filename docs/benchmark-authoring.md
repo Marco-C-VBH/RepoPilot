@@ -416,3 +416,78 @@ not have unless `env.install` says so, and `tests/test_card.py::test_card_render
 renders differently inside the sandbox (it fails there with and without the
 fix; the harness excludes such tests, but a permanently red visible test is a red
 herring for the agent, so it was dropped from rich_001's command).
+
+## jinja (v1, 9 tasks, built 2026-09-25)
+
+Pinned commit `15206881` (3.1.6, src layout) for the mutations; the real task
+sits at the parent of its fix (3.0.1 + 8 commits). 784 tests in 2 s with
+`tests/test_async.py` and `tests/test_async_filters.py` left out (they import
+`trio`); test commands never include those two, and a hidden test that needs the
+async path drives it with `asyncio.run(template.render_async(...))` on an
+`Environment(enable_async=True)`. Templates are mostly built with
+`Environment().from_string(...)`; loader tests use `DictLoader` and `tmp_path`
+(`tests/conftest.py` offers `env`, `dict_loader`, `filesystem_loader`,
+`package_loader`, `choice_loader`, `prefix_loader`). Two upstream facts that
+shaped the sites: constant folding (`nodes.py`, `as_const`) evaluates any filter
+or test whose arguments are all literals at compile time, so a symptom
+described with literal arguments may never reach the code path meant (use a
+variable); and the `with context` include/import path forwards the *local*
+variables of the enclosing frame separately from `context.get_all()`, which is
+what makes loop and `{% with %}` variables visible inside includes.
+
+| id | site | fault | category | report | hidden-only | cross-module | shape |
+|---|---|---|---|---|---|---|---|
+| jinja_001 | `environment.py` `Environment.getattr` + `sandbox.py` `SandboxedEnvironment.getattr` | `except AttributeError` widened to `except Exception` in both: a property that raises falls through to the item lookup / undefined | exception_handling | symptom_only (`Environment`, `SandboxedEnvironment`, `Template.render`) | yes | no | cross_file (2 files) |
+| jinja_002 | `nodes.py` `_FilterTestCommon.as_const` | `except Exception` narrowed to `(TypeError, ValueError)`: a custom filter/test raising anything else on literal arguments fails at load time, even in a dead branch | exception_handling | symptom_only (`Environment`, `Template.render`) | yes | yes | single_line |
+| jinja_003 | `utils.py` `LRUCache.__setitem__` | the existing-key branch dropped: re-setting a cached key (a reload with `auto_reload`) duplicates its queue entry and evicts a neighbour; later evictions raise `KeyError` out of `get_template` | cache_invalidation | public_api | yes | yes | multi_line |
+| jinja_004 | `parser.py` `Parser.parse_call_args` | the `not kwargs` guard dropped: `f(b=1, 2)` compiles and calls `f(2, b=1)` instead of raising `TemplateSyntaxError` | missing_check | symptom_only (`Environment`, `Template.render`, `TemplateSyntaxError`) | yes | yes | single_line |
+| jinja_005 | `compiler.py` `CodeGenerator.visit_ScopedEvalContextModifier` | the runtime `context.eval_ctx.revert(...)` no longer emitted after a scoped `{% autoescape %}` block (the compile-time revert stays): `pass_eval_context` filters/functions and `join` see the block's setting for the rest of the template | state_management | public_api | yes | yes | single_line |
+| jinja_006 | `runtime.py` `LoopContext.length` + `AsyncLoopContext.length` | the peeked item not counted when a generator's size is computed after `loop.last`/`loop.nextitem`: `loop.revindex` ends at 0, `revindex0` at -1 | off_by_one | public_api | yes | no | multi_site (2 hunks) |
+| jinja_007 | `loaders.py` `FileSystemLoader.get_source` (`uptodate` closure) | `except OSError: return False` dropped: a deleted template raises `FileNotFoundError` from `get_template` instead of `TemplateNotFound`, so `ChoiceLoader` and `select_template` fallbacks never run | exception_handling | public_api | yes | no | multi_line |
+| jinja_008 | `compiler.py` `CodeGenerator.visit_Include` + `CodeGenerator._import_common` | the local-context dump dropped from both `with context` paths: includes and context imports do not see loop / `{% with %}` / block-local variables | propagation | public_api | no (3 visible, all on the include side; the import side is hidden-only) | yes | multi_site (2 hunks) |
+| jinja_009 | `compiler.py` `CodeGenerator.pull_dependencies` + `idtracking.py` `Symbols.dump_stores` — real fix `4c703ec` (#1452/#1453), base `02071b3e` | filter/test names and stored names iterated from sets: `compile_templates` output changes with the hash seed | ordering | public_api | yes | yes | cross_file (2 files) |
+
+Against the plan (§4.3): area 1 (whitespace control) and area 5 (grouping
+filters) were not used — the string-filter sweep found only `truncate`'s
+leeway boundary and two `wordwrap` flags hidden-only, none of them worth a
+slot; area 2 (argument parsing) became the positional-after-keyword guard in
+`parse_call_args` (the `parse_signature` default-order guard is pinned by
+`test_arguments_defaults_nonsense`); area 3 (loop context) is the generator
+length peek, doubled onto the async context; area 4 (string filters) gave way
+to the scoped-autoescape runtime revert (compiler); area 6 (idtracking) is
+covered by the real fix instead; area 7 (undefined handling) became the
+attribute-lookup exception boundary, which the sandbox duplicates — the first
+cross-file mutation in the suite; area 8 (`LRUCache`) is as planned. The real
+fix is `4c703ec` (deterministic `compile_templates`, two files) rather than the
+planned `051df10c7b` (`required` block check, one file): the two-file fix is
+worth more to the cross-file target and its upstream test transplants without
+guards. Flags for the nine: hidden-only 8, cross-module 6, symptom_only 3,
+multi-site 4 (cross-file 2); categories exception_handling 3, and one each of
+cache_invalidation, missing_check, state_management, off_by_one, propagation,
+ordering. Derived difficulty 8 hard / 1 medium (jinja_007 is the medium one:
+same-module surface, single site).
+
+Sites rejected on the way, with the reason, so they are not tried again:
+
+- `Environment.overlay` sharing the parent's cache object (hidden-only, a clean
+  cache_invalidation) — the natural report cannot avoid the word `overlay`,
+  which is the changed method (the rich_001 lesson again; the audit bans the
+  gold symbol's last component as a whole identifier, prose included).
+- `LoopContext.length` reports — same rule: the report for jinja_006 never says
+  `length`; it describes `loop.revindex` / `revindex0` and "the size the loop
+  reports", which is a legitimate way a user would see it.
+- `runtime.new_context` dropping the `missing` filter for locals and
+  `Context.derived` dropping `eval_ctx` — both hidden-only, both observable, kept
+  as backups (the first is contrived to reproduce, the second overlaps jinja_005).
+- `Environment.getitem` / `getattr` narrowed excepts, `_load_template` without
+  `is_up_to_date`, `visit_Include` without locals alone, `Compare.as_const`
+  chain, `parse_signature`, `do_truncate` killwords, `do_indent` blank lines —
+  all visible (2–18 tests); `debug.get_template_locals` depth `<=` and the
+  `bccache` checksum comparison — not observable / under a comment stating the
+  reason.
+
+Generic changelog lines exist for two of the areas ("Fix behavior of `loop`
+control variables such as `length` … when looping over a generator", 2.11;
+"Inclusions and imports 'with context' forward all variables now", 2.1). They
+name the area, not the fix, and predate the pinned code by years; the site
+audit prints them and they were accepted.

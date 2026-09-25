@@ -1,0 +1,76 @@
+diff --git a/tests/test_repopilot_jinja_001.py b/tests/test_repopilot_jinja_001.py
+new file mode 100644
+index 0000000..50ae7de
+--- /dev/null
++++ b/tests/test_repopilot_jinja_001.py
+@@ -0,0 +1,70 @@
++import pytest
++
++from jinja2 import Environment
++from jinja2 import StrictUndefined
++from jinja2.exceptions import UndefinedError
++from jinja2.sandbox import ImmutableSandboxedEnvironment
++from jinja2.sandbox import SandboxedEnvironment
++
++
++class Order:
++    def __init__(self, total, count):
++        self.total = total
++        self.count = count
++
++    @property
++    def average(self):
++        return self.total / self.count
++
++    @property
++    def currency(self):
++        return {"total": self.total}["currency"]
++
++
++class OrderRow(Order):
++    def __getitem__(self, key):
++        return f"item:{key}"
++
++
++@pytest.mark.parametrize("env_class", [Environment, SandboxedEnvironment])
++def test_property_errors_propagate_out_of_render(env_class):
++    env = env_class()
++    tmpl = env.from_string("{{ order.average }}")
++
++    with pytest.raises(ZeroDivisionError):
++        tmpl.render(order=Order(10, 0))
++
++    with pytest.raises(KeyError):
++        env.from_string("{{ order.currency }}").render(order=Order(10, 2))
++
++    assert tmpl.render(order=Order(10, 2)) == "5.0"
++
++
++@pytest.mark.parametrize("env_class", [Environment, SandboxedEnvironment])
++def test_property_error_is_not_masked_by_item_lookup(env_class):
++    env = env_class()
++    tmpl = env.from_string("{{ order.average }}")
++
++    with pytest.raises(ZeroDivisionError):
++        tmpl.render(order=OrderRow(10, 0))
++
++    # a genuinely missing attribute still falls back to the item lookup
++    assert env.from_string("{{ order.nothing }}").render(order=OrderRow(1, 1)) == "item:nothing"
++
++
++@pytest.mark.parametrize("env_class", [Environment, SandboxedEnvironment])
++def test_failing_property_is_not_reported_as_undefined(env_class):
++    env = env_class(undefined=StrictUndefined)
++
++    with pytest.raises(ZeroDivisionError):
++        env.from_string("{{ order.average }}").render(order=Order(1, 0))
++
++    with pytest.raises(UndefinedError):
++        env.from_string("{{ order.nothing }}").render(order=Order(1, 1))
++
++
++def test_immutable_sandbox_reports_property_errors():
++    env = ImmutableSandboxedEnvironment()
++
++    with pytest.raises(ZeroDivisionError):
++        env.from_string("{{ order.average }}").render(order=Order(1, 0))

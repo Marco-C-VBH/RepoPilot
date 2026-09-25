@@ -1,0 +1,43 @@
+diff --git a/tests/test_repopilot_jinja_004.py b/tests/test_repopilot_jinja_004.py
+new file mode 100644
+index 0000000..9fccb32
+--- /dev/null
++++ b/tests/test_repopilot_jinja_004.py
+@@ -0,0 +1,37 @@
++import pytest
++
++from jinja2 import Environment
++from jinja2.exceptions import TemplateSyntaxError
++
++
++def record(*args, **kwargs):
++    return f"{args} {sorted(kwargs.items())}"
++
++
++@pytest.mark.parametrize(
++    "source",
++    [
++        "{{ f(a=1, 2) }}",
++        "{{ f(1, b=2, 3) }}",
++        "{{ f(a=1, b=2, 3, 4) }}",
++        "{{ 'x'|replace(new='y', 'x') }}",
++        "{% macro m(a, b) %}{{ a }}-{{ b }}{% endmacro %}{{ m(b=1, 2) }}",
++        "{% call(x) f(a=1, 2) %}{% endcall %}",
++    ],
++)
++def test_positional_argument_after_keyword_argument_is_a_syntax_error(source):
++    with pytest.raises(TemplateSyntaxError, match="invalid syntax for function call"):
++        Environment().from_string(source)
++
++
++def test_valid_argument_orders_still_work():
++    env = Environment()
++
++    with pytest.raises(TemplateSyntaxError):
++        env.from_string("{{ f(a=1, 2) }}")
++
++    tmpl = env.from_string("{{ f(1, 2, a=3) }}|{{ f(*items, a=4) }}|{{ f(1, **extra) }}")
++    assert tmpl.render(f=record, items=[5], extra={"b": 6}) == (
++        "(1, 2) [('a', 3)]|(5,) [('a', 4)]|(1,) [('b', 6)]"
++    )
++    assert env.from_string("{{ f(a=1,) }}").render(f=record) == "() [('a', 1)]"

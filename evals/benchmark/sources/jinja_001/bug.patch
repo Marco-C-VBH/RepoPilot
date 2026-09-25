@@ -1,0 +1,26 @@
+diff --git a/src/jinja2/environment.py b/src/jinja2/environment.py
+index 0fc6e5b..879b05e 100644
+--- a/src/jinja2/environment.py
++++ b/src/jinja2/environment.py
+@@ -488,7 +488,7 @@ class Environment:
+         """
+         try:
+             return getattr(obj, attribute)
+-        except AttributeError:
++        except Exception:
+             pass
+         try:
+             return obj[attribute]
+diff --git a/src/jinja2/sandbox.py b/src/jinja2/sandbox.py
+index 9c9dae2..a52ca80 100644
+--- a/src/jinja2/sandbox.py
++++ b/src/jinja2/sandbox.py
+@@ -317,7 +317,7 @@ class SandboxedEnvironment(Environment):
+         """
+         try:
+             value = getattr(obj, attribute)
+-        except AttributeError:
++        except Exception:
+             try:
+                 return obj[attribute]
+             except (TypeError, LookupError):

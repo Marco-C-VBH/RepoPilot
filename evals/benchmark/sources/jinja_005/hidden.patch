@@ -1,0 +1,54 @@
+diff --git a/tests/test_repopilot_jinja_005.py b/tests/test_repopilot_jinja_005.py
+new file mode 100644
+index 0000000..e53c01b
+--- /dev/null
++++ b/tests/test_repopilot_jinja_005.py
+@@ -0,0 +1,48 @@
++from markupsafe import Markup
++
++from jinja2 import Environment
++from jinja2 import pass_eval_context
++
++
++def make_env():
++    env = Environment()
++    env.filters["mode"] = pass_eval_context(lambda eval_ctx, value: f"{value}:{eval_ctx.autoescape}")
++    env.globals["mode"] = pass_eval_context(lambda eval_ctx: str(eval_ctx.autoescape))
++    return env
++
++
++def test_autoescape_block_is_reverted_for_eval_context_filters():
++    tmpl = make_env().from_string(
++        "{{ x|mode }} {% autoescape true %}{{ x|mode }}{% endautoescape %} {{ x|mode }}"
++    )
++    assert tmpl.render(x="v") == "v:False v:True v:False"
++
++
++def test_autoescape_block_is_reverted_for_eval_context_functions():
++    tmpl = make_env().from_string(
++        "{% autoescape true %}{{ mode() }}{% endautoescape %}{{ mode() }}"
++    )
++    assert tmpl.render() == "TrueFalse"
++
++
++def test_join_after_an_autoescape_block_does_not_escape():
++    tmpl = make_env().from_string(
++        "{% autoescape true %}{{ items|join(', ') }}{% endautoescape %}|{{ items|join(', ') }}"
++    )
++    items = [Markup("<b>"), "<i>"]
++    assert tmpl.render(items=items) == "<b>, &lt;i&gt;|<b>, <i>"
++
++
++def test_nested_autoescape_blocks_revert_to_the_enclosing_setting():
++    tmpl = make_env().from_string(
++        "{% autoescape true %}{% autoescape false %}{{ x|mode }}{% endautoescape %}"
++        "{{ x|mode }}{% endautoescape %}{{ x|mode }}"
++    )
++    assert tmpl.render(x="v") == "v:Falsev:Truev:False"
++
++
++def test_autoescape_block_inside_a_loop_is_reverted_every_iteration():
++    tmpl = make_env().from_string(
++        "{% for i in range(2) %}{% autoescape true %}{% endautoescape %}{{ mode() }}{% endfor %}"
++    )
++    assert tmpl.render() == "FalseFalse"

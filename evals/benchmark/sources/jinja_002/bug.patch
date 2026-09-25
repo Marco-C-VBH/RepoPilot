@@ -1,0 +1,13 @@
+diff --git a/src/jinja2/nodes.py b/src/jinja2/nodes.py
+index 2f93b90..5fdc57b 100644
+--- a/src/jinja2/nodes.py
++++ b/src/jinja2/nodes.py
+@@ -780,7 +780,7 @@ class _FilterTestCommon(Expr):
+ 
+         try:
+             return func(*args, **kwargs)
+-        except Exception as e:
++        except (TypeError, ValueError) as e:
+             raise Impossible() from e
+ 
+ 

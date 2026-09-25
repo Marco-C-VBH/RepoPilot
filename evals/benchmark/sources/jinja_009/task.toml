@@ -1,0 +1,18 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/jinja_009
+id = "jinja_009"
+repo = "https://github.com/pallets/jinja"
+commit = "02071b3e5933560f070e3a898f8aa82622d2001e"   # parent of the fix; between 3.0.1 and 3.0.2
+source = "real"                # the base commit is buggy; no bug.patch
+fix_commit = "4c703ec44dc74b25ba4f1fb7b87bf9106313ffcf"   # "make compile_templates deterministic" (#1452)
+suite = "v1"
+category = "ordering"
+report_level = "public_api"
+entry_points = []
+test_command = "pytest tests/test_api.py tests/test_idtracking.py"
+authored_difficulty = "hard"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

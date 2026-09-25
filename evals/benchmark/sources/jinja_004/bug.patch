@@ -1,0 +1,13 @@
+diff --git a/src/jinja2/parser.py b/src/jinja2/parser.py
+index f411775..17c2f51 100644
+--- a/src/jinja2/parser.py
++++ b/src/jinja2/parser.py
+@@ -917,7 +917,7 @@ class Parser:
+                     kwargs.append(nodes.Keyword(key, value, lineno=value.lineno))
+                 else:
+                     # Parsing an arg
+-                    ensure(dyn_args is None and dyn_kwargs is None and not kwargs)
++                    ensure(dyn_args is None and dyn_kwargs is None)
+                     args.append(self.parse_expression())
+ 
+             require_comma = True

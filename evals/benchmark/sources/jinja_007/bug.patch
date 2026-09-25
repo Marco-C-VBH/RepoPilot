@@ -1,0 +1,16 @@
+diff --git a/src/jinja2/loaders.py b/src/jinja2/loaders.py
+index 3913ee5..fefd9d0 100644
+--- a/src/jinja2/loaders.py
++++ b/src/jinja2/loaders.py
+@@ -217,10 +217,7 @@ class FileSystemLoader(BaseLoader):
+         mtime = os.path.getmtime(filename)
+ 
+         def uptodate() -> bool:
+-            try:
+-                return os.path.getmtime(filename) == mtime
+-            except OSError:
+-                return False
++            return os.path.getmtime(filename) == mtime
+ 
+         # Use normpath to convert Windows altsep to sep.
+         return contents, os.path.normpath(filename), uptodate

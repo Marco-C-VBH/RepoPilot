@@ -1,0 +1,15 @@
+diff --git a/src/jinja2/utils.py b/src/jinja2/utils.py
+index 7c92262..feee368 100644
+--- a/src/jinja2/utils.py
++++ b/src/jinja2/utils.py
+@@ -532,9 +532,7 @@ class LRUCache:
+         has the highest priority then.
+         """
+         with self._wlock:
+-            if key in self._mapping:
+-                self._remove(key)
+-            elif len(self._mapping) == self.capacity:
++            if len(self._mapping) == self.capacity:
+                 del self._mapping[self._popleft()]
+ 
+             self._append(key)

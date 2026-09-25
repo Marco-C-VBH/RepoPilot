@@ -1,0 +1,9 @@
+diff --git a/src/jinja2/compiler.py b/src/jinja2/compiler.py
+index a4ff6a1..a668c70 100644
+--- a/src/jinja2/compiler.py
++++ b/src/jinja2/compiler.py
+@@ -1995,4 +1995,3 @@ class CodeGenerator(NodeVisitor):
+         for child in node.body:
+             self.visit(child, frame)
+         frame.eval_ctx.revert(saved_ctx)
+-        self.writeline(f"context.eval_ctx.revert({old_ctx_name})")

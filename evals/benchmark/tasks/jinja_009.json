@@ -1,0 +1,85 @@
+{
+  "id": "jinja_009",
+  "repo": "https://github.com/pallets/jinja",
+  "base_commit": "02071b3e5933560f070e3a898f8aa82622d2001e",
+  "source": "real",
+  "description": "`Environment.compile_templates` writes different files for the same templates from one run to the next, which breaks a reproducible build that checks the compiled templates into version control.\n\n```python\nfrom jinja2 import DictLoader, Environment\n\nsrc = \"{{ a|upper }}{{ b|lower }}{{ c|trim }}{{ d|title }}{{ e|first }}{{ f|last }}\"\nenv = Environment(loader=DictLoader({\"page\": src}))\nenv.compile_templates(\"build\", zip=None)\n```\n\nRunning this twice (in two processes) and diffing `build/`: the module is the same up to the block that fetches the filters, where the `environment.filters['upper']` … `environment.filters['last']` lookups are bound to `t_1` … `t_6` in a different order each time, so every use of a filter in the body changes its temporary name as well. With `PYTHONHASHSEED=0` the output is stable, which is the only reason our CI passed. The same happens with several `{% import \"x\" as y with context %}` statements: the names that are handed to the imported module are emitted in an order that changes between runs. Templates that use a single filter, or that import nothing, compile identically every time.\n\nCompiled output should not depend on the hash seed of the process: the same source must produce byte-identical compiled modules.",
+  "bug_patch": null,
+  "gold_patch": "diff --git a/src/jinja2/compiler.py b/src/jinja2/compiler.py\nindex 5fe93494..b6297202 100644\n--- a/src/jinja2/compiler.py\n+++ b/src/jinja2/compiler.py\n@@ -556,7 +556,7 @@ class CodeGenerator(NodeVisitor):\n             visitor.tests,\n             \"tests\",\n         ):\n-            for name in names:\n+            for name in sorted(names):\n                 if name not in id_map:\n                     id_map[name] = self.temporary_identifier()\n \ndiff --git a/src/jinja2/idtracking.py b/src/jinja2/idtracking.py\nindex a2e7a055..38c525ee 100644\n--- a/src/jinja2/idtracking.py\n+++ b/src/jinja2/idtracking.py\n@@ -149,7 +149,7 @@ class Symbols:\n         node: t.Optional[\"Symbols\"] = self\n \n         while node is not None:\n-            for name in node.stores:\n+            for name in sorted(node.stores):\n                 if name not in rv:\n                     rv[name] = self.find_ref(name)  # type: ignore\n \n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_jinja_009.py b/tests/test_repopilot_jinja_009.py\nnew file mode 100644\nindex 0000000..42a773f\n--- /dev/null\n+++ b/tests/test_repopilot_jinja_009.py\n@@ -0,0 +1,28 @@\n+import os\n+import re\n+\n+from jinja2.environment import Environment\n+from jinja2.loaders import DictLoader\n+\n+\n+def test_filters_deterministic(tmp_path):\n+    src = \"\".join(f\"{{{{ {i}|filter{i} }}}}\" for i in range(10))\n+    env = Environment(loader=DictLoader({\"foo\": src}))\n+    env.filters.update(dict.fromkeys((f\"filter{i}\" for i in range(10)), lambda: None))\n+    env.compile_templates(tmp_path, zip=None)\n+    name = os.listdir(tmp_path)[0]\n+    content = (tmp_path / name).read_text(\"utf8\")\n+    expect = [f\"filters['filter{i}']\" for i in range(10)]\n+    found = re.findall(r\"filters\\['filter\\d']\", content)\n+    assert found == expect\n+\n+\n+def test_import_as_with_context_deterministic(tmp_path):\n+    src = \"\\n\".join(f'{{% import \"bar\" as bar{i} with context %}}' for i in range(10))\n+    env = Environment(loader=DictLoader({\"foo\": src}))\n+    env.compile_templates(tmp_path, zip=None)\n+    name = os.listdir(tmp_path)[0]\n+    content = (tmp_path / name).read_text(\"utf8\")\n+    expect = [f\"'bar{i}': \" for i in range(10)]\n+    found = re.findall(r\"'bar\\d': \", content)[:10]\n+    assert found == expect\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_jinja_009.py::test_filters_deterministic",
+    "tests/test_repopilot_jinja_009.py::test_import_as_with_context_deterministic"
+  ],
+  "pass_to_pass": [
+    "tests/test_api.py::TestExtendedAPI::test_autoescape_autoselect",
+    "tests/test_api.py::TestExtendedAPI::test_context_finalize",
+    "tests/test_api.py::TestExtendedAPI::test_cycler",
+    "tests/test_api.py::TestExtendedAPI::test_env_autoescape",
+    "tests/test_api.py::TestExtendedAPI::test_eval_finalize",
+    "tests/test_api.py::TestExtendedAPI::test_expressions",
+    "tests/test_api.py::TestExtendedAPI::test_finalize",
+    "tests/test_api.py::TestExtendedAPI::test_finalize_constant_expression",
+    "tests/test_api.py::TestExtendedAPI::test_get_template_undefined",
+    "tests/test_api.py::TestExtendedAPI::test_item_and_attribute",
+    "tests/test_api.py::TestExtendedAPI::test_no_finalize_template_data",
+    "tests/test_api.py::TestExtendedAPI::test_sandbox_max_range",
+    "tests/test_api.py::TestExtendedAPI::test_template_passthrough",
+    "tests/test_api.py::TestLowLevel::test_custom_code_generator",
+    "tests/test_api.py::TestLowLevel::test_custom_context",
+    "tests/test_api.py::TestMeta::test_find_included_templates",
+    "tests/test_api.py::TestMeta::test_find_refererenced_templates",
+    "tests/test_api.py::TestMeta::test_find_undeclared_variables",
+    "tests/test_api.py::TestStreaming::test_basic_streaming",
+    "tests/test_api.py::TestStreaming::test_buffered_streaming",
+    "tests/test_api.py::TestStreaming::test_dump_stream",
+    "tests/test_api.py::TestStreaming::test_streaming_behavior",
+    "tests/test_api.py::TestUndefined::test_chainable_undefined",
+    "tests/test_api.py::TestUndefined::test_debug_undefined",
+    "tests/test_api.py::TestUndefined::test_default_undefined",
+    "tests/test_api.py::TestUndefined::test_indexing_gives_undefined",
+    "tests/test_api.py::TestUndefined::test_logging_undefined",
+    "tests/test_api.py::TestUndefined::test_none_gives_proper_error",
+    "tests/test_api.py::TestUndefined::test_object_repr",
+    "tests/test_api.py::TestUndefined::test_stopiteration_is_undefined",
+    "tests/test_api.py::TestUndefined::test_strict_undefined",
+    "tests/test_api.py::TestUndefined::test_undefined_and_special_attributes",
+    "tests/test_api.py::TestUndefined::test_undefined_attribute_error",
+    "tests/test_idtracking.py::test_basics",
+    "tests/test_idtracking.py::test_complex",
+    "tests/test_idtracking.py::test_if_branching_multi_scope",
+    "tests/test_idtracking.py::test_if_branching_stores",
+    "tests/test_idtracking.py::test_if_branching_stores_undefined"
+  ],
+  "test_command": "pytest tests/test_api.py tests/test_idtracking.py",
+  "gold_files": [
+    "src/jinja2/compiler.py",
+    "src/jinja2/idtracking.py"
+  ],
+  "gold_symbols": [
+    "CodeGenerator.pull_dependencies",
+    "Symbols.dump_stores"
+  ],
+  "category": "ordering",
+  "difficulty": "hard",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "public_api",
+  "entry_points": [],
+  "surface_symbols": [
+    "DictLoader",
+    "Environment",
+    "Environment.compile_templates"
+  ],
+  "surface_files": [
+    "src/jinja2/environment.py",
+    "src/jinja2/loaders.py"
+  ],
+  "cross_module": true,
+  "fix_commit": "4c703ec44dc74b25ba4f1fb7b87bf9106313ffcf",
+  "hidden_pass_to_pass": false
+}

@@ -1,0 +1,22 @@
+diff --git a/src/jinja2/runtime.py b/src/jinja2/runtime.py
+index 09119e2..3d898e8 100644
+--- a/src/jinja2/runtime.py
++++ b/src/jinja2/runtime.py
+@@ -446,7 +446,7 @@ class LoopContext:
+         except TypeError:
+             iterable = list(self._iterator)
+             self._iterator = self._to_iterator(iterable)
+-            self._length = len(iterable) + self.index + (self._after is not missing)
++            self._length = len(iterable) + self.index
+ 
+         return self._length
+ 
+@@ -607,7 +607,7 @@ class AsyncLoopContext(LoopContext):
+         except TypeError:
+             iterable = [x async for x in self._iterator]
+             self._iterator = self._to_iterator(iterable)
+-            self._length = len(iterable) + self.index + (self._after is not missing)
++            self._length = len(iterable) + self.index
+ 
+         return self._length
+ 

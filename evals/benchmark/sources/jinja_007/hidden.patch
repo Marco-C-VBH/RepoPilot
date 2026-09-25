@@ -1,0 +1,60 @@
+diff --git a/tests/test_repopilot_jinja_007.py b/tests/test_repopilot_jinja_007.py
+new file mode 100644
+index 0000000..09ad6e5
+--- /dev/null
++++ b/tests/test_repopilot_jinja_007.py
+@@ -0,0 +1,54 @@
++import os
++
++import pytest
++
++from jinja2 import ChoiceLoader
++from jinja2 import DictLoader
++from jinja2 import Environment
++from jinja2 import FileSystemLoader
++from jinja2.exceptions import TemplateNotFound
++from jinja2.exceptions import TemplatesNotFound
++
++
++@pytest.fixture
++def template_dir(tmp_path):
++    (tmp_path / "page.html").write_text("v1")
++    return tmp_path
++
++
++def test_removed_template_raises_template_not_found(template_dir):
++    env = Environment(loader=FileSystemLoader(str(template_dir)))
++    assert env.get_template("page.html").render() == "v1"
++    os.remove(template_dir / "page.html")
++
++    with pytest.raises(TemplateNotFound):
++        env.get_template("page.html")
++
++    # without auto_reload the cached template keeps being served
++    (template_dir / "page.html").write_text("v1")
++    env = Environment(loader=FileSystemLoader(str(template_dir)), auto_reload=False)
++    assert env.get_template("page.html").render() == "v1"
++    os.remove(template_dir / "page.html")
++    assert env.get_template("page.html").render() == "v1"
++
++
++def test_removed_template_falls_through_to_the_next_loader(template_dir):
++    env = Environment(
++        loader=ChoiceLoader(
++            [FileSystemLoader(str(template_dir)), DictLoader({"page.html": "fallback"})]
++        )
++    )
++    assert env.get_template("page.html").render() == "v1"
++    os.remove(template_dir / "page.html")
++    assert env.get_template("page.html").render() == "fallback"
++
++
++def test_select_template_skips_a_removed_template(template_dir):
++    env = Environment(loader=FileSystemLoader(str(template_dir)))
++    (template_dir / "other.html").write_text("other")
++    assert env.select_template(["page.html", "other.html"]).render() == "v1"
++    os.remove(template_dir / "page.html")
++    assert env.select_template(["page.html", "other.html"]).render() == "other"
++
++    with pytest.raises(TemplatesNotFound):
++        env.select_template(["page.html", "missing.html"])

@@ -1,0 +1,16 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/jinja_008
+id = "jinja_008"
+repo = "https://github.com/pallets/jinja"
+commit = "15206881c006c79667fe5154fe80c01c65410679"   # jinja 3.1.6
+suite = "v1"
+category = "propagation"
+report_level = "public_api"
+entry_points = []
+test_command = "pytest tests/test_imports.py tests/test_regression.py"
+authored_difficulty = "medium"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300
