@@ -32,7 +32,12 @@ COPY repopilot_pytest_plugin.py /opt/repopilot/repopilot_pytest_plugin.py
 RUN chmod 755 /opt/repopilot && chmod 644 /opt/repopilot/repopilot_pytest_plugin.py
 
 USER runner
-RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir "pytest>=8"
+# Pinned on purpose (docs/issues.md #13): the test lists of every task were derived
+# under this pytest, and a newer one can turn a repository's own test suite red --
+# click 8.3.0 runs with `filterwarnings = ["error"]`, and pytest 9.1 warns at
+# collection about a `parametrize` fed an iterator, so `tests/test_basic.py` stops
+# collecting. Bump deliberately, then rebuild and re-derive.
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir "pytest==9.0.3"
 ENV PATH="/opt/venv/bin:${PATH}"
 
 WORKDIR /workspace

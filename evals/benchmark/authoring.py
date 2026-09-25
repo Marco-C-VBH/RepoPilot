@@ -647,7 +647,12 @@ def _run_with(
             f"command?\n{run.stderr[-2000:]}"
         )
     if run.collection_errors:
-        raise AuthoringError(f"[{label}] collection errors: {list(run.collection_errors)}")
+        details = []
+        for nodeid in run.collection_errors:
+            result = run.tests.get(nodeid)
+            reason = (result.longrepr or result.message or "") if result else ""
+            details.append(f"{nodeid}:\n{reason.strip()[-3000:]}" if reason else nodeid)
+        raise AuthoringError(f"[{label}] collection errors:\n" + "\n".join(details))
     return run
 
 
@@ -700,6 +705,13 @@ def _build_task(
     """Assemble the task JSON from the human parts, the derivations and the audit."""
     hidden = set(patches.hidden_files)
     hidden_only = bool(hidden) and all(t.split("::", 1)[0] in hidden for t in fail_to_pass)
+    guards = [t for t in pass_to_pass if t.split("::", 1)[0] in hidden]
+    if guards and not draft.hidden_pass_to_pass:
+        raise AuthoringError(
+            "the shipped pass_to_pass holds hidden tests that pass with the bug "
+            f"({', '.join(guards[:3])}{', ...' if len(guards) > 3 else ''}); set "
+            "hidden_pass_to_pass = true in task.toml if they are intended regression guards"
+        )
     difficulty = derive_difficulty(
         cross_module=audit.report.cross_module,
         hidden_only=hidden_only,
@@ -731,6 +743,7 @@ def _build_task(
             surface_files=list(audit.report.surface_files),
             cross_module=audit.report.cross_module,
             fix_commit=draft.fix_commit,
+            hidden_pass_to_pass=draft.hidden_pass_to_pass,
         )
     except ValidationError as exc:
         raise AuthoringError(f"derived task violates the schema:\n{exc}") from exc
@@ -898,6 +911,11 @@ def report(result: AuthoringResult) -> str:
         tag = "hidden " if _file_of(nodeid) in hidden else "visible"
         lines.append(f"    [{tag}] {nodeid}")
     lines.append(f"  pass_to_pass: {len(task.pass_to_pass)} test(s)")
+    if task.hidden_guards:
+        lines.append(
+            f"    of which {len(task.hidden_guards)} hidden regression guard(s) that pass with "
+            "the bug (hidden_pass_to_pass)"
+        )
     if derived is not None and derived.excluded:
         lines.append(f"  excluded ({len(derived.excluded)}, not passing in either run):")
         lines += [f"    {nodeid}: {why}" for nodeid, why in derived.excluded.items()]

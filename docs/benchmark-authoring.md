@@ -125,8 +125,9 @@ test directory), exercising the behaviour with inputs different from the existin
 tests. It must fail with the bug and pass with the fix — `make_task` checks both.
 A hidden test that passes with the bug too is refused unless `task.toml` says
 `hidden_pass_to_pass = true` (a regression guard transplanted with a real fix,
-see below); it then ships as `pass_to_pass`, and at least one hidden test must
-still be fail-to-pass.
+see below); it then ships as `pass_to_pass`, the task JSON records the flag,
+`tests/test_benchmark_tasks.py` checks that guards and flag agree, and at least
+one hidden test must still be fail-to-pass.
 Whether the *existing* tests also catch the bug is your choice: most tasks should
 have visible failing tests (the agent can run them and iterate), and three to five
 tasks should be caught only by the hidden test (the agent must reproduce from the
@@ -266,7 +267,10 @@ of the scratch-clone workflow: run the repository's suite with
 (`return idx, not item.is_eager` for `return not item.is_eager, idx`) and is
 reverted within the same second leaves a `.pyc` that Python still trusts, and
 the clean tree then fails the mutated tests. `make_task` is immune (fresh
-exports in a fresh container).
+exports in a fresh container). The sandbox pins `pytest==9.0.3`
+(`docker/base.Dockerfile`; issues.md #13); run the cloud pre-check with the same
+version, because a repository that tests with `filterwarnings = ["error"]`
+turns a newer pytest's deprecation warnings into collection errors.
 
 **Refreshing metadata.** `make_task SRC --refresh` re-runs only the git half —
 patch normalization, the audit, the derived fields — on an already-built task,

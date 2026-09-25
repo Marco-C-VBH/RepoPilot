@@ -370,6 +370,14 @@ class Task(BaseModel):
             "parent). Provenance only; never shown to the agent."
         ),
     )
+    hidden_pass_to_pass: bool = Field(
+        default=False,
+        description=(
+            "The hidden test file also carries regression guards that pass with the bug "
+            "(typically the upstream tests transplanted with a real fix); they are listed "
+            "in pass_to_pass on purpose. False means every hidden test is fail_to_pass."
+        ),
+    )
 
     # -- field validators -------------------------------------------------
 
@@ -493,6 +501,12 @@ class Task(BaseModel):
         if not hidden:
             return False
         return all(nodeid.split("::", 1)[0] in hidden for nodeid in self.fail_to_pass)
+
+    @property
+    def hidden_guards(self) -> tuple[str, ...]:
+        """Hidden-file tests shipped in pass_to_pass (allowed only with hidden_pass_to_pass)."""
+        hidden = set(self.hidden_test_files)
+        return tuple(t for t in self.pass_to_pass if t.split("::", 1)[0] in hidden)
 
     @property
     def shape(self) -> PatchShape:

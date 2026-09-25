@@ -30,6 +30,7 @@ from tests.fixture_repo import (
     create_fixture_repo,
     fixture_task_dict,
 )
+from tests.fixture_repo import HIDDEN as FIXTURE_HIDDEN
 from tests.gitfixtures import commit_all
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -552,6 +553,30 @@ def test_refresh_task_rederives_the_audit_fields_and_keeps_the_test_lists(
     assert task.suite is Suite.V0 and task.report_level is ReportLevel.INTERNAL
     assert json.loads((tasks_dir / "fixture_001.json").read_text())["difficulty"] == "easy"
     assert result.derived is None and result.image is None
+
+
+def test_refresh_task_carries_hidden_pass_to_pass_and_checks_it(
+    tmp_path: Path, fixture_repo: tuple[Path, str]
+) -> None:
+    repo, sha = fixture_repo
+    source = write_source(tmp_path / "src", repo, sha)
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    shipped = fixture_task_dict(repo, sha)
+    shipped["description"] = (source / "description.md").read_text().strip()
+    # A second hidden test that passes with the bug too, shipped as pass_to_pass.
+    guard = FIXTURE_HIDDEN.split("::", 1)[0] + "::test_guard"
+    shipped["pass_to_pass"] = [*shipped["pass_to_pass"], guard]
+    (tasks_dir / "fixture_001.json").write_text(json.dumps(shipped))
+    with pytest.raises(AuthoringError, match="set hidden_pass_to_pass = true"):
+        refresh_task(source, out_dir=tasks_dir, cache_dir=tmp_path / "cache")
+    toml = _toml_with("hidden_pass_to_pass = true")
+    (source / "task.toml").write_text(toml.format(id="fixture_001", repo=repo, commit=sha))
+    task = refresh_task(source, out_dir=tasks_dir, cache_dir=tmp_path / "cache").task
+    assert task.hidden_pass_to_pass is True
+    assert task.hidden_guards == (guard,)
+    assert task.hidden_only is False  # ABOVE (a visible test) is still fail_to_pass
+    assert json.loads((tasks_dir / "fixture_001.json").read_text())["hidden_pass_to_pass"] is True
 
 
 def test_refresh_task_refuses_when_the_fix_changed(

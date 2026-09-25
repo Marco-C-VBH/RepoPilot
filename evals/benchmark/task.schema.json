@@ -258,6 +258,12 @@
       "default": null,
       "description": "real tasks: the upstream commit the fix was taken from (base_commit is its parent). Provenance only; never shown to the agent.",
       "title": "Fix Commit"
+    },
+    "hidden_pass_to_pass": {
+      "default": false,
+      "description": "The hidden test file also carries regression guards that pass with the bug (typically the upstream tests transplanted with a real fix); they are listed in pass_to_pass on purpose. False means every hidden test is fail_to_pass.",
+      "title": "Hidden Pass To Pass",
+      "type": "boolean"
     }
   },
   "required": [

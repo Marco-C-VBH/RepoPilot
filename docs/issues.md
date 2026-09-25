@@ -8,6 +8,48 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 13 · The sandbox's pytest drifted and turned a target repository's test file into a collection error
+
+**Date:** 2026-09-25 · **Area:** sandbox × task authoring · **Severity:** medium
+(two of nine click tasks could not be built; would have hit every later task
+whose test command touches the same file)
+
+**Symptom.** `make_task evals/benchmark/sources/click_005` (and `click_007`)
+stopped at the buggy run with `collection errors: ['tests/test_basic.py']`,
+while the same command, files and report plugin collected and ran cleanly in
+the cloud pre-check. The seven other click tasks built; their test commands do
+not include `tests/test_basic.py`.
+
+**Root cause.** The base image installed `pytest>=8`, i.e. whatever was
+newest on the day the image was built. The click images were built on
+2026-09-23 and got pytest 9.1, which emits `PytestRemovedIn10Warning` at
+collection for a `parametrize` whose values are an iterator —
+`tests/test_basic.py::test_boolean_conversion` passes an `itertools.chain`.
+click's `pyproject.toml` runs its suite with `filterwarnings = ["error"]`, so
+the warning became a collection error for the whole file. The cloud pre-check
+runs pytest 9.0.3, which does not warn. Nothing in the task was wrong; the
+sandbox's toolchain was unpinned, so the derivation depended on the build date.
+The first symptom was also unreadable: `_run_with` reported the failing file
+without the reason the plugin had recorded.
+
+**Fix.**
+
+- `docker/base.Dockerfile` pins `pytest==9.0.3` — the version the cloud
+  pre-checks use and the version every shipped test list was derived under.
+  The base-image tag hashes the Dockerfile, so the base and every task image
+  rebuild on the next run; the derived lists do not change.
+- `evals/benchmark/authoring.py` (`_run_with`): a collection error now prints
+  the plugin's recorded reason (longrepr or message) for each failing file.
+
+**Guard.** The pin itself: a pytest bump is now a deliberate edit that rebuilds
+every image, not a side effect of the calendar. `docs/benchmark-authoring.md`
+records the version the cloud pre-check must match.
+
+**Lesson.** A sandbox that installs "the latest" of anything is not a fixed
+environment; the target repositories' own test configuration (warnings as
+errors) turns toolchain drift into failures that look like task bugs. Pin what
+the derivation depends on, and make every refusal carry its reason.
+
 ## 12 · The compact state dropped the retrieved evidence exactly when the model needed its text
 
 **Date:** 2026-09-19 · **Area:** retrieval × compact context · **Severity:** low

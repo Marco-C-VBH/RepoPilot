@@ -92,7 +92,12 @@ def test_hidden_tests_are_new_files_that_catch_the_bug(task: Task) -> None:
         assert f"--- a/{path}" not in task.hidden_test_patch, "hidden patch must add, not edit"
         hidden_ids = [t for t in task.fail_to_pass if t.startswith(path + "::")]
         assert hidden_ids, f"{path} contributes nothing to fail_to_pass"
-    assert not any(t.startswith(p + "::") for p in hidden for t in task.pass_to_pass)
+    # A hidden test that passes with the bug is a regression guard transplanted with a
+    # real fix, and the task must say so; without the flag it is an authoring accident.
+    assert bool(task.hidden_guards) == task.hidden_pass_to_pass, (
+        f"hidden tests in pass_to_pass: {task.hidden_guards}; "
+        f"hidden_pass_to_pass={task.hidden_pass_to_pass}"
+    )
     assert task.pass_to_pass, "an empty pass_to_pass would let a fix delete the suite"
 
 

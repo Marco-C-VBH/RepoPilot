@@ -182,5 +182,6 @@
     "src/click/types.py"
   ],
   "cross_module": true,
-  "fix_commit": "4fd2fea0db423d242aedcae0a5f664efe0a93484"
+  "fix_commit": "4fd2fea0db423d242aedcae0a5f664efe0a93484",
+  "hidden_pass_to_pass": true
 }
