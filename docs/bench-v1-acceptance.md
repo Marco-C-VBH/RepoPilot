@@ -25,10 +25,10 @@ uv run python scripts/archive_run.py results/<gold run dir> bench-v1-gold-x2
 
 | check | expected | measured |
 |---|---|---|
-| `validate_tasks.py --audit --strict` | exit 0, 50 valid, report audit clean for every task, 8/8 targets ok | |
-| null | 0 / 50 pass, exit 0 under `--expect fail` | |
-| gold × 2 | 100 / 100 pass, identical per-test outcomes between the two repeats | |
-| `leak_scan.py` over the two runs | no hidden test file or hidden test name in any trace | |
+| `validate_tasks.py --audit --strict` | exit 0, 50 valid, report audit clean for every task, 8/8 targets ok | ✓ (2026-09-26) |
+| null | 0 / 50 pass, exit 0 under `--expect fail` | ✓ 0 / 50 (`null-20260926-092254-1ef4`, 78 s) |
+| gold × 2 | 100 / 100 pass, identical per-test outcomes between the two repeats | ✓ 100 / 100, `deterministic: true` (`gold-20260926-092538-5685`, 98 s) |
+| `leak_scan.py` over the two runs | no hidden test file or hidden test name in any trace | ✓ clean |
 
 A gold failure means a task whose fixed image differs from the derivation
 image (rebuild with `--rebuild` and re-derive with `make_task --force`); a
@@ -59,11 +59,57 @@ Archive each as `leak-v1-<arm>-<suite>-luna` with `<arm>` in `A`, `Bp`, `C`,
 
 | | v0 (14) expected | v0 measured | v1-new (36) expected | v1-new measured |
 |---|---|---|---|---|
-| A success | 13–14 / 14 | | 55–80 % | |
-| B′ success; A − B′ | ≥ 20 pp below A | | ≤ 10 pp below A | |
-| C success on visible-failure tasks; A − C | 10–30 pp below A (12 tasks) | | 10–30 pp below A (11 tasks) | |
-| D success; A − D | D ≥ 60 %; A − D ≤ 20 pp | | D ≤ 30 %; A − D ≥ 30 pp | |
+| A success | 13–14 / 14 | **14 / 14** ✓ | 55–80 % | **31 / 36 = 86.1 %** (above the range) |
+| B′ success; A − B′ | ≥ 20 pp below A | 14 / 14; **0 pp** ✗ | ≤ 10 pp below A | 29 / 36 = 80.6 %; **5.5 pp** ✓ |
+| C success on visible-failure tasks; A − C | 10–30 pp below A (12 tasks) | 12 / 12; **0 pp** ✗ | 10–30 pp below A (11 tasks) | 8 / 11 vs A 7 / 11; **−9 pp** ✗ (C above A) |
+| D success; A − D | D ≥ 60 %; A − D ≤ 20 pp | **6 / 14 = 42.9 %**; A − D **57 pp** ✗ (D lower, gap wider than expected) | D ≤ 30 %; A − D ≥ 30 pp | **2 / 36 = 5.6 %**; A − D **80.5 pp** ✓✓ |
 
+Runs (all `gpt-5.6-luna`, baseline agent, default budget: 30 steps, 40 tool
+calls, 5 test runs, 100k tokens, $0.50, 600 s; 2026-09-26): v0 A
+`baseline-20260926-092939-b63e`, B′ `-094917-1235`, C `-101023-8614`, D
+`-102921-7534`; v1-new A `-093354-1684`, B′ `-095340-11ef`, C `-101420-af8a`,
+D `-103358-e071`. Total cost $1.05 (predicted ≈ $1). Per arm on v1-new: cost
+$0.18 / $0.17 / $0.20 / $0.27; tokens per task (median) 73k / 69k / 78k /
+108k; runs ended by the token cap 10 / 9 / 12 / 29 of 36.
+
+Measured, beyond the table:
+
+- v1-new, arm A: the 5 failures are all `budget_exceeded`, and 4 of them are
+  multi-site or cross-file tasks (jinja_008, jinja_009, rich_006,
+  sqlparse_001; the fifth is sqlparse_008). By shape: single_line 18 / 19,
+  multi_line 6 / 6, multi_site 4 / 6, cross_file 3 / 5. By tier: public_api
+  19 / 24, symptom_only 12 / 12. Localization: gold file read in 36 / 36 runs,
+  first edit in a gold file in 31 of the 33 runs that edited (94 %).
+- v1-new, arm D: 2 passes (click_004, rich_003); failures `budget_exceeded`
+  22, `retrieval_failure` 9 (the gold file never read), `incorrect_patch` 3;
+  gold file read in 27 / 36 runs, first edit in a gold file in 7 of 10 runs
+  that edited. Every multi-site, cross-file and multi-line task fails in D.
+- v0, arm D: 6 passes (cachetools_001, cachetools_004, cachetools_005,
+  tenacity_003, toolz_002, toolz_003); 9 of 14 runs ended by the token cap.
+- Noise floor: on the 25 hidden-only tasks C carries the same information
+  as A, yet the two arms score 24 / 25 and 22 / 25 (three tasks flip one
+  way, one the other); single runs of this agent move by about ±2 tasks of
+  36 (≈ 5 pp). Differences of
+  that size (A − B′, A − C) are within noise; the A − D gap is 15× it.
+
+Reading against the rules fixed above. The two decisive rows hold with a
+wide margin: without the report the fault is found in 2 of 36 tasks (D =
+5.6 %, ceiling 30 %), with it in 31 of 36, so the report is the information
+and the sites do not give themselves away; and the report survives redaction
+(B′ within 5.5 pp, ceiling 10 pp), so what it carries is the symptom, not
+the identifiers. Neither v1.1 trigger fires. The rows that missed are all
+on the v0 side of the prediction and all in the same direction: v0 was
+expected to be solved *through* its identifiers and its visible tests, and
+it is not — B′ and C stay at 14 / 14, and even D reaches 43 % — v0 is solved
+from the report *or* the tests *or* the code, whichever is left; only taking
+all three away costs anything. The audit's leak ranking (identifiers first)
+was wrong for this model; the v0 sites were less self-describing than feared
+(43 %, not ≥ 60 %), but eight times more so than v1-new's (5.6 %). On
+v1-new, A landed above its 55–80 % range: the baseline with the full report
+solves 86 % — not saturated (v0: 100 %), and the failures concentrate on the
+multi-site shapes, which is where the benchmark's headroom is. The two D
+passes on v1-new (click_004, rich_003) are noted for v1.1: both are
+single-line sites an inspection can spot without a report.
 C is read on the visible-failure subset only (`by_hidden_only` in
 `summary.json`: on hidden-only tasks C ≡ A by construction). Reading rules,
 fixed in advance: D within 15 pp of A on v1-new → the sites are still

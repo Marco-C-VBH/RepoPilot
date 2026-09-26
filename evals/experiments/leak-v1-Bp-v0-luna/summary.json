@@ -1,0 +1,179 @@
+{
+  "run_id": "baseline-20260926-094917-1235",
+  "solver": "baseline",
+  "tasks": 14,
+  "repeat": 1,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 0,
+    "PASS": 14
+  },
+  "pass_rate": 1.0,
+  "deterministic": null,
+  "nondeterministic_tasks": [],
+  "duration_seconds": 262.706,
+  "started_at": "2026-09-26T13:49:17+00:00",
+  "finished_at": "2026-09-26T13:53:40+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/baseline-20260926-094917-1235",
+  "model": "gpt-5.6-luna",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "context": null,
+  "retrieval": null,
+  "suite": "v0",
+  "report": "redacted",
+  "run_tests_tool": true,
+  "agent": {
+    "results": 14,
+    "success_rate": 1.0,
+    "patch_rate": 1.0,
+    "regression_rate": 0.0,
+    "avg_steps": 7.929,
+    "avg_tool_calls": 9.929,
+    "avg_test_runs": 2.071,
+    "invalid_tool_call_rate": 0.0791,
+    "edits": 16,
+    "failed_edits": 1,
+    "tolerant_edits": 0,
+    "edit_failure_rate": 0.0588,
+    "terminations": {
+      "done": 14
+    },
+    "tokens_mean": 36454,
+    "tokens_median": 30442,
+    "cost_total_usd": 0.0408,
+    "cost_mean_usd": 0.003,
+    "cost_median_usd": 0.0026,
+    "solve_p50_seconds": 16.4,
+    "solve_p95_seconds": 22.8,
+    "failures": {},
+    "localization": {
+      "runs_with_an_edit": 14,
+      "first_edit_in_gold_file": 14,
+      "gold_file_read_before_first_edit": 14,
+      "gold_file_read": 14,
+      "first_edit_in_gold_file_rate": 1.0,
+      "gold_file_read_rate": 1.0
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 2,
+        "total": 2
+      },
+      "exception_handling": {
+        "pass": 2,
+        "total": 2
+      },
+      "missing_check": {
+        "pass": 2,
+        "total": 2
+      },
+      "off_by_one": {
+        "pass": 2,
+        "total": 2
+      },
+      "retry_logic": {
+        "pass": 2,
+        "total": 2
+      },
+      "state_management": {
+        "pass": 2,
+        "total": 2
+      },
+      "wrong_condition": {
+        "pass": 2,
+        "total": 2
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "pass": 11,
+        "total": 11
+      },
+      "hard": {
+        "pass": 1,
+        "total": 1
+      },
+      "medium": {
+        "pass": 2,
+        "total": 2
+      }
+    },
+    "by_suite": {
+      "v0": {
+        "pass": 14,
+        "total": 14
+      }
+    },
+    "by_repo": {
+      "cachetools": {
+        "pass": 5,
+        "total": 5
+      },
+      "tenacity": {
+        "pass": 5,
+        "total": 5
+      },
+      "toolz": {
+        "pass": 4,
+        "total": 4
+      }
+    },
+    "by_report_level": {
+      "internal": {
+        "pass": 14,
+        "total": 14
+      }
+    },
+    "by_hidden_only": {
+      "False": {
+        "pass": 12,
+        "total": 12
+      },
+      "True": {
+        "pass": 2,
+        "total": 2
+      }
+    },
+    "by_cross_module": {
+      "False": {
+        "pass": 13,
+        "total": 13
+      },
+      "True": {
+        "pass": 1,
+        "total": 1
+      }
+    },
+    "by_shape": {
+      "multi_line": {
+        "pass": 4,
+        "total": 4
+      },
+      "multi_site": {
+        "pass": 1,
+        "total": 1
+      },
+      "single_line": {
+        "pass": 9,
+        "total": 9
+      }
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/baseline-20260926-094917-1235"
+}

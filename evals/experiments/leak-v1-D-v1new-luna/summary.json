@@ -1,0 +1,196 @@
+{
+  "run_id": "baseline-20260926-103358-e071",
+  "solver": "baseline",
+  "tasks": 36,
+  "repeat": 1,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 34,
+    "PASS": 2
+  },
+  "pass_rate": 0.0556,
+  "deterministic": null,
+  "nondeterministic_tasks": [],
+  "duration_seconds": 889.321,
+  "started_at": "2026-09-26T14:33:58+00:00",
+  "finished_at": "2026-09-26T14:48:47+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/baseline-20260926-103358-e071",
+  "model": "gpt-5.6-luna",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "context": null,
+  "retrieval": null,
+  "suite": "v1-new",
+  "report": "generic",
+  "run_tests_tool": false,
+  "agent": {
+    "results": 36,
+    "success_rate": 0.0556,
+    "patch_rate": 0.2778,
+    "regression_rate": 0.0,
+    "avg_steps": 8.306,
+    "avg_tool_calls": 19.75,
+    "avg_test_runs": 0.0,
+    "invalid_tool_call_rate": 0.0183,
+    "edits": 10,
+    "failed_edits": 0,
+    "tolerant_edits": 0,
+    "edit_failure_rate": 0.0,
+    "terminations": {
+      "budget_tokens": 29,
+      "done": 7
+    },
+    "tokens_mean": 101531,
+    "tokens_median": 107780,
+    "cost_total_usd": 0.2688,
+    "cost_mean_usd": 0.007,
+    "cost_median_usd": 0.0078,
+    "solve_p50_seconds": 21.9,
+    "solve_p95_seconds": 42.6,
+    "failures": {
+      "budget_exceeded": 22,
+      "incorrect_patch": 3,
+      "retrieval_failure": 9
+    },
+    "localization": {
+      "runs_with_an_edit": 10,
+      "first_edit_in_gold_file": 7,
+      "gold_file_read_before_first_edit": 7,
+      "gold_file_read": 27,
+      "first_edit_in_gold_file_rate": 0.7,
+      "gold_file_read_rate": 0.75
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 0,
+        "total": 3
+      },
+      "exception_handling": {
+        "pass": 0,
+        "total": 3
+      },
+      "missing_check": {
+        "pass": 0,
+        "total": 6
+      },
+      "off_by_one": {
+        "pass": 1,
+        "total": 5
+      },
+      "ordering": {
+        "pass": 0,
+        "total": 4
+      },
+      "propagation": {
+        "pass": 1,
+        "total": 6
+      },
+      "state_management": {
+        "pass": 0,
+        "total": 4
+      },
+      "wrong_condition": {
+        "pass": 0,
+        "total": 5
+      }
+    },
+    "by_difficulty": {
+      "hard": {
+        "pass": 1,
+        "total": 26
+      },
+      "medium": {
+        "pass": 1,
+        "total": 10
+      }
+    },
+    "by_suite": {
+      "v1": {
+        "pass": 2,
+        "total": 36
+      }
+    },
+    "by_repo": {
+      "click": {
+        "pass": 1,
+        "total": 9
+      },
+      "jinja": {
+        "pass": 0,
+        "total": 9
+      },
+      "rich": {
+        "pass": 1,
+        "total": 9
+      },
+      "sqlparse": {
+        "pass": 0,
+        "total": 9
+      }
+    },
+    "by_report_level": {
+      "public_api": {
+        "pass": 1,
+        "total": 24
+      },
+      "symptom_only": {
+        "pass": 1,
+        "total": 12
+      }
+    },
+    "by_hidden_only": {
+      "False": {
+        "pass": 0,
+        "total": 11
+      },
+      "True": {
+        "pass": 2,
+        "total": 25
+      }
+    },
+    "by_cross_module": {
+      "False": {
+        "pass": 1,
+        "total": 8
+      },
+      "True": {
+        "pass": 1,
+        "total": 28
+      }
+    },
+    "by_shape": {
+      "cross_file": {
+        "pass": 0,
+        "total": 5
+      },
+      "multi_line": {
+        "pass": 0,
+        "total": 6
+      },
+      "multi_site": {
+        "pass": 0,
+        "total": 6
+      },
+      "single_line": {
+        "pass": 2,
+        "total": 19
+      }
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/baseline-20260926-103358-e071"
+}
