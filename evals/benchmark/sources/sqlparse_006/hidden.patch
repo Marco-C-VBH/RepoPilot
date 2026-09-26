@@ -1,0 +1,41 @@
+diff --git a/tests/test_repopilot_sqlparse_006.py b/tests/test_repopilot_sqlparse_006.py
+new file mode 100644
+index 0000000..b33c453
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_006.py
+@@ -0,0 +1,35 @@
++import sqlparse
++
++
++def test_wrap_after_keeps_a_line_that_exactly_fits():
++    formatted = sqlparse.format(
++        "select aaaa, bbbb, cccc, dddd from t", reindent=True, wrap_after=17
++    )
++    assert formatted == "select aaaa, bbbb, cccc,\n       dddd\nfrom t"
++
++
++def test_wrap_after_boundary_in_the_select_list():
++    sql = "select a, bb, ccc, dddd from t"
++    assert sqlparse.format(sql, reindent=True, wrap_after=10) == (
++        "select a, bb,\n       ccc,\n       dddd\nfrom t"
++    )
++    assert sqlparse.format(sql, reindent=True, wrap_after=9) == (
++        "select a,\n       bb,\n       ccc,\n       dddd\nfrom t"
++    )
++
++
++def test_wrap_after_boundary_in_function_arguments():
++    sql = "select foo(aaaa, bbbb, cccc, dddd) from t"
++    assert sqlparse.format(sql, reindent=True, wrap_after=22) == (
++        "select foo(aaaa,\n         bbbb, cccc, dddd)\nfrom t"
++    )
++    assert sqlparse.format(sql, reindent=True, wrap_after=17) == (
++        "select foo(aaaa,\n         bbbb, cccc,\n         dddd)\nfrom t"
++    )
++
++
++def test_wrap_after_boundary_in_function_arguments_with_an_alias():
++    sql = "select x, foo(aaaa, bbbb, cccc, dddd) as y from t"
++    assert sqlparse.format(sql, reindent=True, wrap_after=22) == (
++        "select x,\n       foo(aaaa,\n         bbbb, cccc, dddd) as y\nfrom t"
++    )

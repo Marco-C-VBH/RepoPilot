@@ -1,0 +1,12 @@
+diff --git a/sqlparse/sql.py b/sqlparse/sql.py
+index be74694..95bddd3 100644
+--- a/sqlparse/sql.py
++++ b/sqlparse/sql.py
+@@ -598,7 +598,6 @@ class Case(TokenList):
+                 mode = VALUE
+ 
+             elif token.match(T.Keyword, 'ELSE'):
+-                ret.append((None, []))
+                 mode = VALUE
+ 
+             elif token.match(T.Keyword, 'END'):

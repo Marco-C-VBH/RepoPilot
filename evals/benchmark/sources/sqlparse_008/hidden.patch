@@ -1,0 +1,56 @@
+diff --git a/tests/test_repopilot_sqlparse_008.py b/tests/test_repopilot_sqlparse_008.py
+new file mode 100644
+index 0000000..9918499
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_008.py
+@@ -0,0 +1,50 @@
++import sqlparse
++
++
++def test_reindent_puts_else_on_its_own_line():
++    formatted = sqlparse.format(
++        "select case when a then 1 when b then 2 else 3 end from t", reindent=True
++    )
++    assert formatted == "\n".join(
++        [
++            "select case",
++            "           when a then 1",
++            "           when b then 2",
++            "           else 3",
++            "       end",
++            "from t",
++        ]
++    )
++
++
++def test_reindent_puts_else_on_its_own_line_with_a_single_when():
++    formatted = sqlparse.format("select case when a then 1 else 3 end as x from t", reindent=True)
++    assert formatted == "\n".join(
++        [
++            "select case",
++            "           when a then 1",
++            "           else 3",
++            "       end as x",
++            "from t",
++        ]
++    )
++    # a CASE without ELSE keeps its layout
++    formatted = sqlparse.format("select case when a then 1 when b then 2 end from t", reindent=True)
++    assert formatted == "\n".join(
++        ["select case", "           when a then 1", "           when b then 2", "       end", "from t"]
++    )
++
++
++def test_aligned_reindent_puts_else_on_its_own_line():
++    formatted = sqlparse.format(
++        "select case when a then 1 when b then 2 else 3 end from t", reindent_aligned=True
++    )
++    assert formatted == "\n".join(
++        [
++            "select case when a then 1",
++            "            when b then 2",
++            "            else 3",
++            "             end",
++            "  from t",
++        ]
++    )

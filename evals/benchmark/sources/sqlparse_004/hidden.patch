@@ -1,0 +1,41 @@
+diff --git a/tests/test_repopilot_sqlparse_004.py b/tests/test_repopilot_sqlparse_004.py
+new file mode 100644
+index 0000000..b098fbb
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_004.py
+@@ -0,0 +1,35 @@
++import sqlparse
++
++
++PROCEDURE = (
++    "CREATE PROCEDURE countdown(IN n INT)\n"
++    "BEGIN\n"
++    "  WHILE n > 0 DO\n"
++    "    SET n = n - 1;\n"
++    "  END WHILE;\n"
++    "END;"
++)
++
++
++def test_split_after_a_procedure_with_a_while_loop():
++    statements = sqlparse.split(PROCEDURE + "\nSELECT 1;\nSELECT 2;")
++    assert len(statements) == 3
++    assert statements[0] == PROCEDURE
++    assert statements[1:] == ["SELECT 1;", "SELECT 2;"]
++
++
++def test_split_two_procedures_with_while_loops():
++    statements = sqlparse.split(PROCEDURE + "\n" + PROCEDURE)
++    assert statements == [PROCEDURE, PROCEDURE]
++
++
++def test_split_while_loop_nested_in_an_if_block():
++    procedure = (
++        "CREATE PROCEDURE p()\n"
++        "BEGIN\n"
++        "  IF x THEN\n"
++        "    WHILE y DO SET y = y - 1; END WHILE;\n"
++        "  END IF;\n"
++        "END;"
++    )
++    assert sqlparse.split(procedure + "\nSELECT 1;") == [procedure, "SELECT 1;"]

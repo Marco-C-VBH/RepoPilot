@@ -1,0 +1,19 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/sqlparse_009
+id = "sqlparse_009"
+repo = "https://github.com/andialbrecht/sqlparse"
+commit = "aaf5403f05e2cdb4f36a507b92e039c8cc2016a0"   # parent of the fix; 0.3.1.dev0 (after 0.3.0)
+source = "real"                # the base commit is buggy; no bug.patch
+fix_commit = "44eacf2e2f4a4255829109a5e67e0c1d2af542da"   # "[fix] Fixing typed literal regression" (John Bodley, 2020-01-20)
+hidden_pass_to_pass = true     # the transplanted upstream test also covers DATE, which already works
+suite = "v1"
+category = "missing_check"
+report_level = "public_api"
+entry_points = []
+test_command = "pytest tests/test_grouping.py tests/test_parse.py tests/test_regressions.py"
+authored_difficulty = "hard"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

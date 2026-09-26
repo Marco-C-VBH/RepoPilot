@@ -1,0 +1,50 @@
+diff --git a/tests/test_repopilot_sqlparse_001.py b/tests/test_repopilot_sqlparse_001.py
+new file mode 100644
+index 0000000..a4e226e
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_001.py
+@@ -0,0 +1,44 @@
++import sqlparse
++from sqlparse import sql
++
++
++def test_except_ends_the_where_clause():
++    stmt = sqlparse.parse("select 1 from foo where 2 = 3 except select 2 from bar")[0]
++    where = [t for t in stmt.tokens if isinstance(t, sql.Where)]
++    assert [str(w).strip() for w in where] == ["where 2 = 3"]
++    top_level = [str(t) for t in stmt.tokens if not t.is_whitespace]
++    assert "except" in top_level
++
++
++def test_except_ends_a_where_clause_with_a_trailing_condition():
++    stmt = sqlparse.parse("select a from foo where x in (1, 2) except select a from bar where y = 1")[0]
++    where = [t for t in stmt.tokens if isinstance(t, sql.Where)]
++    assert [str(w).strip() for w in where] == ["where x in (1, 2)", "where y = 1"]
++
++
++def test_reindent_breaks_before_except():
++    formatted = sqlparse.format(
++        "select 1 from foo where 2 = 3 except select 2 from bar where 1 = 2", reindent=True
++    )
++    assert formatted == "\n".join(
++        ["select 1", "from foo", "where 2 = 3", "except", "select 2", "from bar", "where 1 = 2"]
++    )
++
++
++def test_reindent_breaks_before_except_without_where():
++    formatted = sqlparse.format("select a from foo except select a from bar", reindent=True)
++    assert formatted == "select a\nfrom foo\nexcept\nselect a\nfrom bar"
++
++
++def test_aligned_reindent_breaks_before_except():
++    formatted = sqlparse.format(
++        "select 1 from foo where 2 = 3 except select 2 from bar", reindent_aligned=True
++    )
++    assert formatted == "\n".join(
++        ["select 1", "  from foo", " where 2 = 3", "except select 2", "  from bar"]
++    )
++
++
++def test_aligned_reindent_breaks_before_except_without_where():
++    formatted = sqlparse.format("select a from foo except select a from bar", reindent_aligned=True)
++    assert formatted == "select a\n  from foo\nexcept select a\n  from bar"

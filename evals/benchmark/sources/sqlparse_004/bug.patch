@@ -1,0 +1,13 @@
+diff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py
+index 6c69d30..1477a54 100644
+--- a/sqlparse/engine/statement_splitter.py
++++ b/sqlparse/engine/statement_splitter.py
+@@ -73,7 +73,7 @@ class StatementSplitter:
+                 self._in_case = True
+             return 1
+ 
+-        if unified in ('END IF', 'END FOR', 'END WHILE'):
++        if unified in ('END IF', 'END FOR'):
+             return -1
+ 
+         # Default

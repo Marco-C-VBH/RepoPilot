@@ -1,0 +1,40 @@
+diff --git a/tests/test_repopilot_sqlparse_002.py b/tests/test_repopilot_sqlparse_002.py
+new file mode 100644
+index 0000000..b93f094
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_002.py
+@@ -0,0 +1,34 @@
++import sqlparse
++
++
++def test_reindent_keeps_between_and_together():
++    formatted = sqlparse.format(
++        "select * from t where a between 1 and 2 and b = 3", reindent=True
++    )
++    assert formatted == "select *\nfrom t\nwhere a between 1 and 2\n  and b = 3"
++
++
++def test_reindent_keeps_between_and_together_in_a_join_condition():
++    formatted = sqlparse.format(
++        "select * from t join u on t.id = u.id and u.x between 1 and 5 or u.y = 2",
++        reindent=True,
++    )
++    assert formatted == (
++        "select *\nfrom t\njoin u on t.id = u.id\nand u.x between 1 and 5\nor u.y = 2"
++    )
++
++
++def test_aligned_reindent_keeps_between_and_together():
++    formatted = sqlparse.format(
++        "select * from t where a between 1 and 2 and b = 3", reindent_aligned=True
++    )
++    assert formatted == "select *\n  from t\n where a between 1 and 2\n   and b = 3"
++
++
++def test_aligned_reindent_keeps_two_betweens_together():
++    formatted = sqlparse.format(
++        "select * from t where a between 1 and 2 and b between 3 and 4", reindent_aligned=True
++    )
++    assert formatted == (
++        "select *\n  from t\n where a between 1 and 2\n   and b between 3 and 4"
++    )

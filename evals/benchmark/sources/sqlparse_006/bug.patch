@@ -1,0 +1,22 @@
+diff --git a/sqlparse/filters/reindent.py b/sqlparse/filters/reindent.py
+index 7dc2b82..20d1db9 100644
+--- a/sqlparse/filters/reindent.py
++++ b/sqlparse/filters/reindent.py
+@@ -141,7 +141,7 @@ class ReindentFilter:
+                 for token in identifiers:
+                     # Add 1 for the "," separator
+                     position += len(token.value) + 1
+-                    if position > (self.wrap_after - self.offset):
++                    if position >= (self.wrap_after - self.offset):
+                         adjust = 0
+                         if self.comma_first:
+                             adjust = -2
+@@ -183,7 +183,7 @@ class ReindentFilter:
+                     # Add 1 for the "," separator
+                     position += len(token.value) + 1
+                     if (self.wrap_after > 0
+-                            and position > (self.wrap_after - self.offset)):
++                            and position >= (self.wrap_after - self.offset)):
+                         adjust = 0
+                         tlist.insert_before(token, self.nl(offset=adjust))
+                         position = 0

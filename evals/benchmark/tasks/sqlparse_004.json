@@ -1,0 +1,83 @@
+{
+  "id": "sqlparse_004",
+  "repo": "https://github.com/andialbrecht/sqlparse",
+  "base_commit": "ec0af5bf6345750d84274bc5c857d4a75b88619b",
+  "source": "mutation",
+  "description": "`sqlparse.split` no longer ends a stored procedure that contains a while-loop: every statement after it is merged into the procedure.\n\n```python\nimport sqlparse\n\nscript = \"\"\"\\\nCREATE PROCEDURE countdown(IN n INT)\nBEGIN\n  WHILE n > 0 DO\n    SET n = n - 1;\n  END WHILE;\nEND;\nSELECT 1;\nSELECT 2;\"\"\"\nfor statement in sqlparse.split(script):\n    print(repr(statement))\n```\n\n```\n'CREATE PROCEDURE countdown(IN n INT)\\nBEGIN\\n  WHILE n > 0 DO\\n    SET n = n - 1;\\n  END WHILE;\\nEND;\\nSELECT 1;\\nSELECT 2;'\n```\n\nExpected three statements: the procedure, then the two selects. Two such procedures in one script come back as one statement as well. The same procedure body with an if-block instead of the loop is split correctly:\n\n```\nCREATE PROCEDURE p()\nBEGIN\n  IF n > 0 THEN\n    SET n = n - 1;\n  END IF;\nEND;\nSELECT 1;\n```\n\ngives two statements, as it should — and a while-loop nested inside such an if-block shows the problem again.",
+  "bug_patch": "diff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py\nindex 6c69d30..1477a54 100644\n--- a/sqlparse/engine/statement_splitter.py\n+++ b/sqlparse/engine/statement_splitter.py\n@@ -73,7 +73,7 @@ class StatementSplitter:\n                 self._in_case = True\n             return 1\n \n-        if unified in ('END IF', 'END FOR', 'END WHILE'):\n+        if unified in ('END IF', 'END FOR'):\n             return -1\n \n         # Default\n",
+  "gold_patch": "diff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py\nindex 1477a54..6c69d30 100644\n--- a/sqlparse/engine/statement_splitter.py\n+++ b/sqlparse/engine/statement_splitter.py\n@@ -73,7 +73,7 @@ class StatementSplitter:\n                 self._in_case = True\n             return 1\n \n-        if unified in ('END IF', 'END FOR'):\n+        if unified in ('END IF', 'END FOR', 'END WHILE'):\n             return -1\n \n         # Default\n",
+  "hidden_test_patch": "diff --git a/tests/test_repopilot_sqlparse_004.py b/tests/test_repopilot_sqlparse_004.py\nnew file mode 100644\nindex 0000000..b098fbb\n--- /dev/null\n+++ b/tests/test_repopilot_sqlparse_004.py\n@@ -0,0 +1,35 @@\n+import sqlparse\n+\n+\n+PROCEDURE = (\n+    \"CREATE PROCEDURE countdown(IN n INT)\\n\"\n+    \"BEGIN\\n\"\n+    \"  WHILE n > 0 DO\\n\"\n+    \"    SET n = n - 1;\\n\"\n+    \"  END WHILE;\\n\"\n+    \"END;\"\n+)\n+\n+\n+def test_split_after_a_procedure_with_a_while_loop():\n+    statements = sqlparse.split(PROCEDURE + \"\\nSELECT 1;\\nSELECT 2;\")\n+    assert len(statements) == 3\n+    assert statements[0] == PROCEDURE\n+    assert statements[1:] == [\"SELECT 1;\", \"SELECT 2;\"]\n+\n+\n+def test_split_two_procedures_with_while_loops():\n+    statements = sqlparse.split(PROCEDURE + \"\\n\" + PROCEDURE)\n+    assert statements == [PROCEDURE, PROCEDURE]\n+\n+\n+def test_split_while_loop_nested_in_an_if_block():\n+    procedure = (\n+        \"CREATE PROCEDURE p()\\n\"\n+        \"BEGIN\\n\"\n+        \"  IF x THEN\\n\"\n+        \"    WHILE y DO SET y = y - 1; END WHILE;\\n\"\n+        \"  END IF;\\n\"\n+        \"END;\"\n+    )\n+    assert sqlparse.split(procedure + \"\\nSELECT 1;\") == [procedure, \"SELECT 1;\"]\n",
+  "fail_to_pass": [
+    "tests/test_repopilot_sqlparse_004.py::test_split_after_a_procedure_with_a_while_loop",
+    "tests/test_repopilot_sqlparse_004.py::test_split_two_procedures_with_while_loops",
+    "tests/test_repopilot_sqlparse_004.py::test_split_while_loop_nested_in_an_if_block"
+  ],
+  "pass_to_pass": [
+    "tests/test_split.py::test_split_backslash",
+    "tests/test_split.py::test_split_begintag",
+    "tests/test_split.py::test_split_begintag_2",
+    "tests/test_split.py::test_split_casewhen",
+    "tests/test_split.py::test_split_casewhen_procedure",
+    "tests/test_split.py::test_split_comment_end_of_line",
+    "tests/test_split.py::test_split_comment_with_umlaut",
+    "tests/test_split.py::test_split_create_function[function.sql]",
+    "tests/test_split.py::test_split_create_function[function_psql.sql]",
+    "tests/test_split.py::test_split_create_function[function_psql2.sql]",
+    "tests/test_split.py::test_split_create_function[function_psql3.sql]",
+    "tests/test_split.py::test_split_create_function[function_psql4.sql]",
+    "tests/test_split.py::test_split_cursor_declare",
+    "tests/test_split.py::test_split_dashcomments",
+    "tests/test_split.py::test_split_dashcomments_eol[select foo; -- comment\\n]",
+    "tests/test_split.py::test_split_dashcomments_eol[select foo; -- comment\\r\\n]",
+    "tests/test_split.py::test_split_dashcomments_eol[select foo; -- comment\\r]",
+    "tests/test_split.py::test_split_dashcomments_eol[select foo; -- comment]",
+    "tests/test_split.py::test_split_dropif",
+    "tests/test_split.py::test_split_encoding_parsestream",
+    "tests/test_split.py::test_split_go[SELECT * FROM foo;\\nGO-2]",
+    "tests/test_split.py::test_split_go[USE foo;\\nGO 2\\nSELECT 1;-3]",
+    "tests/test_split.py::test_split_go[USE foo;\\nGO\\nSELECT 1;\\nGO-4]",
+    "tests/test_split.py::test_split_if_function",
+    "tests/test_split.py::test_split_ignores_empty_newlines",
+    "tests/test_split.py::test_split_multiple_case_in_begin",
+    "tests/test_split.py::test_split_mysql_handler_for",
+    "tests/test_split.py::test_split_quotes_with_new_line",
+    "tests/test_split.py::test_split_semicolon",
+    "tests/test_split.py::test_split_simple",
+    "tests/test_split.py::test_split_stream",
+    "tests/test_split.py::test_split_strip_semicolon[  select * from foo;\\n\\nselect * from bar;\\n\\n\\n\\n-expected3]",
+    "tests/test_split.py::test_split_strip_semicolon[select * from foo-expected1]",
+    "tests/test_split.py::test_split_strip_semicolon[select * from foo; select * from bar;-expected2]",
+    "tests/test_split.py::test_split_strip_semicolon[select * from foo;-expected0]",
+    "tests/test_split.py::test_split_strip_semicolon[select * from foo\\n\\n;  bar-expected4]",
+    "tests/test_split.py::test_split_strip_semicolon_procedure",
+    "tests/test_split.py::test_split_unicode_parsestream"
+  ],
+  "test_command": "pytest tests/test_split.py",
+  "gold_files": [
+    "sqlparse/engine/statement_splitter.py"
+  ],
+  "gold_symbols": [
+    "StatementSplitter._change_splitlevel"
+  ],
+  "category": "missing_check",
+  "difficulty": "hard",
+  "env": {
+    "python": "3.11",
+    "install": "pip install -e .",
+    "test_timeout_seconds": 300
+  },
+  "suite": "v1",
+  "report_level": "symptom_only",
+  "entry_points": [
+    "sqlparse.split"
+  ],
+  "surface_symbols": [
+    "split"
+  ],
+  "surface_files": [
+    "sqlparse/__init__.py"
+  ],
+  "cross_module": true,
+  "fix_commit": null,
+  "hidden_pass_to_pass": false
+}

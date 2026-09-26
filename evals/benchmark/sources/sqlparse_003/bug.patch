@@ -1,0 +1,13 @@
+diff --git a/sqlparse/filters/others.py b/sqlparse/filters/others.py
+index 6c1680e..4ac9753 100644
+--- a/sqlparse/filters/others.py
++++ b/sqlparse/filters/others.py
+@@ -123,7 +123,7 @@ class StripWhitespaceFilter:
+     def process(self, stmt, depth=0):
+         [self.process(sgroup, depth + 1) for sgroup in stmt.get_sublists()]
+         self._stripws(stmt)
+-        if depth == 0 and stmt.tokens and stmt.tokens[-1].is_whitespace:
++        if stmt.tokens and stmt.tokens[-1].is_whitespace:
+             stmt.tokens.pop(-1)
+         return stmt
+ 

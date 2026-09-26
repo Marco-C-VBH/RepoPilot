@@ -1,0 +1,33 @@
+diff --git a/tests/test_repopilot_sqlparse_007.py b/tests/test_repopilot_sqlparse_007.py
+new file mode 100644
+index 0000000..eeb114c
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_007.py
+@@ -0,0 +1,27 @@
++import sqlparse
++
++
++def test_strip_comments_and_whitespace_leave_a_single_space():
++    formatted = sqlparse.format(
++        "select a, /* c */ b from t  where x = 1", strip_comments=True, strip_whitespace=True
++    )
++    assert formatted == "select a, b from t where x = 1"
++
++
++def test_strip_comments_and_whitespace_at_the_start_of_the_select_list():
++    formatted = sqlparse.format(
++        "select /* c */ a from t", strip_comments=True, strip_whitespace=True
++    )
++    assert formatted == "select a from t"
++
++
++def test_strip_comments_with_reindent_leaves_no_extra_spaces():
++    formatted = sqlparse.format(
++        "select a /* c */ from t where /* d */ x = 1", strip_comments=True, reindent=True
++    )
++    assert formatted == "select a\nfrom t\nwhere x = 1"
++
++
++def test_single_line_comment_with_reindent():
++    formatted = sqlparse.format("select a, -- c\n b from t", strip_comments=True, reindent=True)
++    assert formatted == "select a, b\nfrom t"

@@ -1,0 +1,39 @@
+diff --git a/sqlparse/filters/aligned_indent.py b/sqlparse/filters/aligned_indent.py
+index dc60926..d935650 100644
+--- a/sqlparse/filters/aligned_indent.py
++++ b/sqlparse/filters/aligned_indent.py
+@@ -19,7 +19,7 @@ class AlignedIndentFilter:
+                    'WHERE', 'AND', 'OR',
+                    'HAVING', 'LIMIT',
+                    'UNION', 'VALUES',
+-                   'SET', 'BETWEEN', 'EXCEPT')
++                   'SET', 'BETWEEN')
+ 
+     def __init__(self, char=' ', n='\n'):
+         self.n = n
+diff --git a/sqlparse/filters/reindent.py b/sqlparse/filters/reindent.py
+index 7dc2b82..ec57a91 100644
+--- a/sqlparse/filters/reindent.py
++++ b/sqlparse/filters/reindent.py
+@@ -54,7 +54,7 @@ class ReindentFilter:
+     def _next_token(self, tlist, idx=-1):
+         split_words = ('FROM', 'STRAIGHT_JOIN$', 'JOIN$', 'AND', 'OR',
+                        'GROUP BY', 'ORDER BY', 'UNION', 'VALUES',
+-                       'SET', 'BETWEEN', 'EXCEPT', 'HAVING', 'LIMIT')
++                       'SET', 'BETWEEN', 'HAVING', 'LIMIT')
+         m_split = T.Keyword, split_words, True
+         tidx, token = tlist.token_next_by(m=m_split, idx=idx)
+ 
+diff --git a/sqlparse/sql.py b/sqlparse/sql.py
+index be74694..088dc39 100644
+--- a/sqlparse/sql.py
++++ b/sqlparse/sql.py
+@@ -551,7 +551,7 @@ class Where(TokenList):
+     """A WHERE clause."""
+     M_OPEN = T.Keyword, 'WHERE'
+     M_CLOSE = T.Keyword, (
+-        'ORDER BY', 'GROUP BY', 'LIMIT', 'UNION', 'UNION ALL', 'EXCEPT',
++        'ORDER BY', 'GROUP BY', 'LIMIT', 'UNION', 'UNION ALL',
+         'HAVING', 'RETURNING', 'INTO')
+ 
+ 

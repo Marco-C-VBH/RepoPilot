@@ -1,0 +1,25 @@
+diff --git a/tests/test_repopilot_sqlparse_005.py b/tests/test_repopilot_sqlparse_005.py
+new file mode 100644
+index 0000000..538f812
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_005.py
+@@ -0,0 +1,19 @@
++import sqlparse
++
++
++def test_indent_columns_alone_reindents_the_statement():
++    formatted = sqlparse.format("select a, b from t where c = 1", indent_columns=True)
++    assert formatted == "select\n  a,\n  b\nfrom t\nwhere c = 1"
++
++
++def test_indent_columns_alone_matches_indent_columns_with_reindent():
++    sql = "select a, b, c from t inner join u on t.id = u.id where t.x > 1"
++    alone = sqlparse.format(sql, indent_columns=True)
++    both = sqlparse.format(sql, indent_columns=True, reindent=True)
++    assert alone == both
++    assert alone.startswith("select\n  a,\n  b,\n  c\nfrom t\n")
++
++
++def test_indent_columns_honours_indent_width_on_its_own():
++    formatted = sqlparse.format("select a, b from t", indent_columns=True, indent_width=4)
++    assert formatted == "select\n    a,\n    b\nfrom t"

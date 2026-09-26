@@ -1,0 +1,42 @@
+diff --git a/tests/test_repopilot_sqlparse_003.py b/tests/test_repopilot_sqlparse_003.py
+new file mode 100644
+index 0000000..2680f2b
+--- /dev/null
++++ b/tests/test_repopilot_sqlparse_003.py
+@@ -0,0 +1,36 @@
++import pytest
++
++import sqlparse
++
++
++@pytest.mark.parametrize(
++    "sql",
++    [
++        "select * from t where a = 1 order by b",
++        "select * from t where a = 1 limit 10",
++        "select * from t where a = 1 group by b",
++        "select * from t where a = 1 union select 2",
++        "select * from t where a = 1 having b > 2",
++        "delete from t where a = 1 returning id",
++    ],
++)
++def test_strip_whitespace_keeps_the_space_after_a_where_clause(sql):
++    assert sqlparse.format(sql, strip_whitespace=True) == sql
++
++
++def test_strip_whitespace_keeps_the_space_after_a_nested_where_clause():
++    formatted = sqlparse.format(
++        "select * from t where a in (select b from u where c = 1 order by c) order by b",
++        strip_whitespace=True,
++    )
++    assert formatted == (
++        "select * from t where a in (select b from u where c = 1 order by c) order by b"
++    )
++
++
++def test_strip_whitespace_collapses_runs_and_drops_the_trailing_whitespace():
++    formatted = sqlparse.format(
++        "select *   from t   where a = 1 order by b   ", strip_whitespace=True
++    )
++    assert formatted == "select * from t where a = 1 order by b"
++    assert sqlparse.format("select a from t;  \n", strip_whitespace=True) == "select a from t;"

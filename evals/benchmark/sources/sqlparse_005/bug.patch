@@ -1,0 +1,13 @@
+diff --git a/sqlparse/formatter.py b/sqlparse/formatter.py
+index 72f2c19..cb09ea8 100644
+--- a/sqlparse/formatter.py
++++ b/sqlparse/formatter.py
+@@ -61,7 +61,7 @@ def validate_options(options):  # noqa: C901
+         raise SQLParseError('Invalid value for indent_columns: '
+                             '{!r}'.format(indent_columns))
+     elif indent_columns:
+-        options['reindent'] = True  # enforce reindent
++        pass
+     options['indent_columns'] = indent_columns
+ 
+     reindent = options.get('reindent', False)

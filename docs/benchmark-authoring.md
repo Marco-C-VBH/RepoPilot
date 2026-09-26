@@ -491,3 +491,70 @@ control variables such as `length` … when looping over a generator", 2.11;
 "Inclusions and imports 'with context' forward all variables now", 2.1). They
 name the area, not the fix, and predate the pinned code by years; the site
 audit prints them and they were accepted.
+
+## sqlparse (v1, 9 tasks, built 2026-09-26)
+
+Pinned commit `ec0af5bf` (0.5.3) for the mutations; the real task sits at
+`aaf5403f` (0.3.0 + 50 commits, January 2020 — the fix is `44eacf2`), where
+four `tests/test_cli.py` cases fail on Python 3.11 for reasons unrelated to
+the fix (`sys.stdout.encoding` is read-only), so its command stays away from
+that file. 461 tests in 1.4 s, no dependencies. The whole surface is three
+functions in `sqlparse/__init__.py` (`format`, `parse`, `split`), so every
+task here is cross-module by construction; the price is that the audit
+resolves SQL keywords written in back-ticks to the grouping classes of
+`sql.py` (`` `where` `` → `Where`, `` `group by` `` → `grouping.group`,
+`` `IF` `` → `If`) and an all-caps keyword in prose to the same
+(`WHERE` → `Where`). Reports therefore keep SQL in fenced blocks or in
+lower-case prose ("a where-clause") and never in back-ticks; fenced blocks
+without a `python` tag are not scanned for identifiers. The suite pins most
+sites (of 65 single-site mutations tried, 46 were visible); the hidden-only
+ones cluster in the formatter options and the splitter.
+
+| id | site | fault | category | report | hidden-only | cross-module | shape |
+|---|---|---|---|---|---|---|---|
+| sqlparse_001 | `sql.py` `Where.M_CLOSE` + `reindent.py` `ReindentFilter._next_token` split words + `aligned_indent.py` `AlignedIndentFilter.split_words` | `EXCEPT` dropped from all three clause-boundary lists: the where-clause swallows it, neither reindent mode breaks before it | missing_check | public_api | no (1 visible, `test_except_formatting`; the aligned side is hidden-only) | yes | **cross_file** (3 files) |
+| sqlparse_002 | `reindent.py` + `aligned_indent.py`, both `_next_token` | the `AND` of `BETWEEN … AND …` no longer skipped: both modes break the range across two lines | wrong_condition | public_api | no (4 visible: `test_keywords_between` + 3 aligned) | yes | **cross_file** (2 files) |
+| sqlparse_003 | `others.py` `StripWhitespaceFilter.process` | trailing whitespace popped at every depth instead of the statement only: `where a = 1order by b` | wrong_condition | symptom_only (`sqlparse.format`) | yes | yes | single_line |
+| sqlparse_004 | `statement_splitter.py` `_change_splitlevel` | `END WHILE` no longer closes a level: everything after a procedure with a while-loop merges into it | missing_check | symptom_only (`sqlparse.split`) | yes | yes | single_line |
+| sqlparse_005 | `formatter.py` `validate_options` | `indent_columns` no longer implies `reindent`: the option is silently ignored on its own | propagation | symptom_only (`sqlparse.format`) | yes | yes | single_line |
+| sqlparse_006 | `reindent.py` `_process_identifierlist`, both wrap sites | `wrap_after` boundary `>=`: a line that fits exactly is wrapped, in select lists and in function arguments | off_by_one | public_api | yes | yes | multi_site (2 hunks) |
+| sqlparse_007 | `formatter.py` `build_filter_stack` | whitespace stripped before comments are removed: `select a,   b` | ordering | public_api | no (1 visible, `test_strip_comments_multi`) | yes | multi_line |
+| sqlparse_008 | `sql.py` `Case.get_cases` | `ELSE` does not open its own entry: reindent glues `else 3` to the last when-line | state_management | public_api | no (5 visible) | yes | single_line |
+| sqlparse_009 | `grouping.py` `group_typed_literal.match` + `sql.py` `TypedLiteral` — real fix `44eacf2` ("Fixing typed literal regression"), base `aaf5403f` | the open pattern accepts only `Name.Builtin`, so `TIMESTAMP '…'` (a keyword) is never grouped as a typed literal | missing_check | public_api | yes (`hidden_pass_to_pass`: the upstream test's `DATE` case passes with the bug) | yes | **cross_file** (2 files) |
+
+Against the plan (§4.3): the planned real fix `791e25de46` (multiple `CASE`
+in a `BEGIN` block) was dropped because the buggy base carries a comment at
+the site that asks the exact question the fix answers ("Would having
+multiple CASE WHEN END … cause the statement to cut off prematurely?"), and
+`8b03427` (comment grouping) because its fix rewrites three assertions of the
+visible suite; `44eacf2` is older but clean, two files, and its test
+transplants with one guard. The two cross-file mutations exploit a real
+maintenance hazard of this code base — the clause keywords and the
+`BETWEEN` special case are duplicated between `ReindentFilter`,
+`AlignedIndentFilter` and `sql.Where` — which is exactly the kind of site the
+design wanted for multi-site tasks. Flags for the nine: hidden-only 5,
+cross-module 9, symptom_only 3, multi-site 4 (cross-file 3); categories
+missing_check 3, wrong_condition 2, propagation / off_by_one / ordering /
+state_management 1 each. Derived difficulty 7 hard / 2 medium.
+
+Sites rejected, with the reason:
+
+- `utils.imt` with a list of patterns checking only the first — hidden-only
+  but not observable: the second pattern of `TypedLiteral.M_OPEN` is dead at
+  0.5.3 (`TIMESTAMP` is lexed as `Name.Builtin` now).
+- `StripWhitespaceFilter._stripws_identifierlist` (newline before a comma
+  kept) — hidden-only and observable, but the line above the site says what
+  it does ("Removes newlines before commas, see issue140").
+- `StripCommentsFilter` inserting a space after `(` — observable only as a
+  double space; `_group_matching` on unbalanced parentheses — needs invalid
+  SQL; `SpacesAroundOperatorsFilter` index shift, `Case` end position, and
+  `get_alias` length — hidden-only with no observable difference found.
+- `VALUES` dropped from both split-word lists — hidden-only in both files,
+  but the reindent side only shows on a bare `values` or a values-list
+  subquery, where the changed output is arguably nicer; not a bug a report
+  could describe.
+- Visible with a clear symptom, kept as backups: `identifier_case` on quoted
+  identifiers (1), `GO 2` batch separators (1), `Statement.get_type` with a
+  list of CTEs (1), `group_functions` losing the `OVER` clause (2), the
+  `utils.offset`/`utils.indent` context managers not restoring (11 + 4,
+  multi-site).

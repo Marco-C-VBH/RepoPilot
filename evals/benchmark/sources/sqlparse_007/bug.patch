@@ -1,0 +1,23 @@
+diff --git a/sqlparse/formatter.py b/sqlparse/formatter.py
+index 72f2c19..afddd71 100644
+--- a/sqlparse/formatter.py
++++ b/sqlparse/formatter.py
+@@ -159,14 +159,14 @@ def build_filter_stack(stack, options):
+         stack.stmtprocess.append(filters.SpacesAroundOperatorsFilter())
+ 
+     # After grouping
+-    if options.get('strip_comments'):
+-        stack.enable_grouping()
+-        stack.stmtprocess.append(filters.StripCommentsFilter())
+-
+     if options.get('strip_whitespace') or options.get('reindent'):
+         stack.enable_grouping()
+         stack.stmtprocess.append(filters.StripWhitespaceFilter())
+ 
++    if options.get('strip_comments'):
++        stack.enable_grouping()
++        stack.stmtprocess.append(filters.StripCommentsFilter())
++
+     if options.get('reindent'):
+         stack.enable_grouping()
+         stack.stmtprocess.append(

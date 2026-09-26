@@ -1,0 +1,16 @@
+# RepoPilot-Bench task source. Build the task JSON with:
+#   uv run python scripts/make_task.py evals/benchmark/sources/sqlparse_006
+id = "sqlparse_006"
+repo = "https://github.com/andialbrecht/sqlparse"
+commit = "ec0af5bf6345750d84274bc5c857d4a75b88619b"   # sqlparse 0.5.3
+suite = "v1"
+category = "off_by_one"
+report_level = "public_api"
+entry_points = []
+test_command = "pytest tests/test_format.py tests/test_regressions.py"
+authored_difficulty = "hard"
+
+[env]
+python = "3.11"
+install = "pip install -e ."
+test_timeout_seconds = 300

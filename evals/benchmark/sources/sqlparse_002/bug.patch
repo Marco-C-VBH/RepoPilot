@@ -1,0 +1,27 @@
+diff --git a/sqlparse/filters/aligned_indent.py b/sqlparse/filters/aligned_indent.py
+index dc60926..1750e9d 100644
+--- a/sqlparse/filters/aligned_indent.py
++++ b/sqlparse/filters/aligned_indent.py
+@@ -92,8 +92,6 @@ class AlignedIndentFilter:
+         # treat "BETWEEN x and y" as a single statement
+         if token and token.normalized == 'BETWEEN':
+             tidx, token = self._next_token(tlist, tidx)
+-            if token and token.normalized == 'AND':
+-                tidx, token = self._next_token(tlist, tidx)
+         return tidx, token
+ 
+     def _split_kwds(self, tlist):
+diff --git a/sqlparse/filters/reindent.py b/sqlparse/filters/reindent.py
+index 7dc2b82..22acc83 100644
+--- a/sqlparse/filters/reindent.py
++++ b/sqlparse/filters/reindent.py
+@@ -61,9 +61,6 @@ class ReindentFilter:
+         if token and token.normalized == 'BETWEEN':
+             tidx, token = self._next_token(tlist, tidx)
+ 
+-            if token and token.normalized == 'AND':
+-                tidx, token = self._next_token(tlist, tidx)
+-
+         return tidx, token
+ 
+     def _split_kwds(self, tlist):
