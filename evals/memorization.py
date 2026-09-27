@@ -107,13 +107,21 @@ class SymbolSource:
     lines: int
 
 
-def symbol_source(workspace: Workspace, qualname: str) -> SymbolSource | None:
-    """The source of ``qualname`` in the workspace, or None when it is not found."""
+def symbol_source(
+    workspace: Workspace, qualname: str, *, prefer_paths: Sequence[str] = ()
+) -> SymbolSource | None:
+    """The source of ``qualname`` in the workspace, or None when it is not found.
+
+    A bare name can be defined in several files (rich has a module-level
+    ``render`` in ``markup.py`` and ``Console.render``); ``prefer_paths`` — the
+    task's gold files — picks the definition the task is about (issue #16).
+    """
     index = SymbolIndex(workspace)
     matches, exact = index.lookup(qualname)
     if not exact or not matches:
         return None
-    symbol = matches[0]
+    preferred = [m for m in matches if m.path in prefer_paths]
+    symbol = (preferred or matches)[0]
     lines = workspace.read_text(symbol.path).splitlines()
     start, end = symbol.line, symbol.end_line
     # Include decorators directly above the definition.
@@ -164,14 +172,17 @@ def probe_task(
                     task.repo, task.base_commit, task.gold_patch, cache_dir=cache_dir
                 )
             for qualname in task.gold_symbols:
-                found = symbol_source(base, qualname)
+                found = symbol_source(base, qualname, prefer_paths=task.gold_files)
                 if found is None or found.lines > MAX_SOURCE_LINES:
                     continue
                 prompt = probe_prompt(
                     task.repo_name, task.base_commit, found.path, found.qualname, found.signature
                 )
+                # No temperature: the Anthropic Messages API has none (issue #15) and
+                # OpenAI's reasoning models reject a non-default value, so recall is
+                # measured under each provider's default sampling.
                 response = client.complete(
-                    [system(SYSTEM_PROMPT), user(prompt)], max_tokens=max_tokens, temperature=0.0
+                    [system(SYSTEM_PROMPT), user(prompt)], max_tokens=max_tokens
                 )
                 if ledger is not None:
                     ledger.record(response)
@@ -179,7 +190,7 @@ def probe_task(
                 ratio = similarity(found.text, reply)
                 ratio_fixed = None
                 if fixed is not None:
-                    fixed_source = symbol_source(fixed, qualname)
+                    fixed_source = symbol_source(fixed, qualname, prefer_paths=task.gold_files)
                     if fixed_source is not None:
                         ratio_fixed = similarity(fixed_source.text, reply)
                 rows.append(

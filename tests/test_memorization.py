@@ -59,6 +59,23 @@ def test_symbol_source_includes_decorators(tmp_path: Path) -> None:
     assert symbol_source(ws, "missing") is None
 
 
+def test_symbol_source_prefers_the_gold_file_for_a_bare_name(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    create_fixture_repo(repo)
+    (repo / "fixturepkg" / "console.py").write_text(
+        "class Console:\n    def render(self):\n        return 'console'\n"
+    )
+    (repo / "fixturepkg" / "markup.py").write_text("def render(text):\n    return text\n")
+    ws = Workspace.from_repo(repo)
+    first = symbol_source(ws, "render")
+    assert first is not None and first.path == "fixturepkg/console.py"  # index order
+    found = symbol_source(ws, "render", prefer_paths=["fixturepkg/markup.py"])
+    assert found is not None
+    assert found.path == "fixturepkg/markup.py" and found.qualname == "render"
+    # a preference that matches nothing falls back to the first exact match
+    assert symbol_source(ws, "render", prefer_paths=["nope.py"]).path == "fixturepkg/console.py"
+
+
 def test_run_probe_scores_replies_and_summarizes(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     sha = create_fixture_repo(repo)
@@ -82,7 +99,7 @@ def test_run_probe_scores_replies_and_summarizes(tmp_path: Path) -> None:
     assert summary["kind"] == "memorization" and summary["models"] == ["recaller", "guesser"]
     text = format_summary(summary)
     assert "recaller" in text and "guesser" in text
-    assert recalled.calls[0].temperature == 0.0 and not recalled.calls[0].tools
+    assert recalled.calls[0].temperature is None and not recalled.calls[0].tools
 
 
 def test_summarize_handles_no_rows() -> None:

@@ -96,7 +96,7 @@ def test_anthropic_request_translation() -> None:
     assert request["model"] == "claude-sonnet-5"
     assert request["system"] == "You fix bugs."
     assert request["max_tokens"] == 512
-    assert request["temperature"] == 0.0
+    assert "temperature" not in request  # the Messages API has no such parameter (#15)
     assert request["tools"] == [
         {
             "name": "read_file",
@@ -471,3 +471,32 @@ def test_tool_choice_none_keeps_tools_defined_but_unusable() -> None:
     sdk = FakeAnthropicSDK(anthropic_response(text_block("ok")))
     AnthropicClient("claude-sonnet-5", sdk_client=sdk).complete([user("hi")], tool_choice="none")
     assert "tool_choice" not in sdk.requests[0] and "tools" not in sdk.requests[0]
+
+
+# -- the real SDK signatures (issue #15) -------------------------------------------
+# Every key the builders emit must be a parameter of the installed SDK's create
+# method, so a knob that only exists in our wrapper cannot reach a live call.
+
+
+def test_anthropic_request_keys_exist_on_the_installed_sdk() -> None:
+    anthropic = pytest.importorskip("anthropic")
+    import inspect
+
+    accepted = set(inspect.signature(anthropic.resources.messages.Messages.create).parameters)
+    client = AnthropicClient("claude-sonnet-5", sdk_client=FakeAnthropicSDK(anthropic_response()))
+    request = client.build_request(
+        CONVERSATION, tools=TOOLS, max_tokens=512, temperature=0.0, tool_choice="none"
+    )
+    assert set(request) <= accepted, sorted(set(request) - accepted)
+
+
+def test_openai_request_keys_exist_on_the_installed_sdk() -> None:
+    openai = pytest.importorskip("openai")
+    import inspect
+
+    accepted = set(inspect.signature(openai.resources.responses.Responses.create).parameters)
+    client = OpenAIClient("gpt-5.6-terra", sdk_client=FakeOpenAISDK(None), reasoning_effort="low")
+    request = client.build_request(
+        CONVERSATION, tools=TOOLS, max_tokens=256, temperature=1.0, tool_choice="none"
+    )
+    assert set(request) <= accepted, sorted(set(request) - accepted)

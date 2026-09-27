@@ -8,6 +8,82 @@ Format: **symptom → root cause → fix → guard**.
 
 ---
 
+## 16 · The memorization probe measured the wrong `render`
+
+**Date:** 2026-09-26 · **Area:** memorization probe · **Severity:** low
+(one symbol of 59 in the first v1 probe run; the run was repeated after the fix)
+
+**Symptom.** In the first v1 probe run the row for `rich_004` names the symbol
+`Console.render` (`rich/console.py`) although the task's gold symbol is the
+module-level `render` of `rich/markup.py`; Sonnet "recalled" a function the
+task never touches.
+
+**Root cause.** `symbol_source` resolved a gold symbol with
+`SymbolIndex.lookup(qualname)`, whose exact matches include every symbol whose
+*name* equals the query, and took the first match. A bare module-level name
+that also exists as a method elsewhere (`render`) resolves to whichever file
+the index visits first. The task knows its file — `gold_files` — and the probe
+never used it.
+
+**Fix.** `symbol_source(..., prefer_paths=task.gold_files)`: among the exact
+matches the first one inside a gold file wins; the plain first match is the
+fallback for symbols outside them.
+
+**Guard.** `tests/test_memorization.py::test_symbol_source_prefers_the_gold_file_for_a_bare_name`.
+
+**Lesson.** A benchmark task carries the disambiguation the tools need; a
+lookup by name alone is a guess whenever the repository is larger than the
+fixture it was written against.
+
+---
+
+## 15 · The memorization probe crashed on its first Anthropic call: the SDK has no `temperature`
+
+**Date:** 2026-09-26 · **Area:** model layer × memorization probe · **Severity:** low
+(the probe never ran; no benchmark number was affected)
+
+**Symptom.** `scripts/memorization_probe.py --models claude-haiku-4-5-20251001 …`
+died on the first symbol with `ModelError: anthropic call to
+claude-haiku-4-5-20251001 failed: TypeError: Messages.create() got an unexpected
+keyword argument 'temperature'`.
+
+**Root cause.** `AnthropicClient.build_request` forwarded `temperature` whenever
+a caller set one, and the probe asked for `temperature=0.0` to make recall
+deterministic. The installed SDK (`anthropic` 1.5.0, pinned in `uv.lock` since
+the model layer landed on 2026-09-14) has no sampling temperature anywhere:
+`MessageCreateParams` does not define it and `Messages.create` rejects the
+keyword. The knob had existed in our interface for two weeks without a caller —
+the agents never set a temperature, the unit tests exercise a fake SDK, and the
+live smoke test does not pass one — so the first real caller was the probe.
+The OpenAI client has the mirror-image problem: reasoning models reject a
+non-default temperature, which is why it only sends one when asked, and the
+probe would have failed on `gpt-5.6-luna` next.
+
+**Fix.**
+
+- `repopilot/models/client.py`: the Anthropic request builder never emits
+  `temperature`; the parameter stays on the interface for symmetry and is
+  documented as ignored.
+- `evals/memorization.py`: the probe no longer asks for a temperature — recall
+  is measured under each provider's default sampling, which is what an agent
+  gets anyway.
+
+**Guard.** `tests/test_model_clients.py::test_anthropic_request_translation`
+asserts the request carries no `temperature` even when one is passed;
+`tests/test_memorization.py::test_run_probe_scores_replies_and_summarizes`
+asserts the probe's call sets none.
+
+**Lesson.** A parameter that exists only in our wrapper and never in a real
+call is untested code. Two new unit tests
+(`test_anthropic_request_keys_exist_on_the_installed_sdk`,
+`test_openai_request_keys_exist_on_the_installed_sdk`) now check every key the
+request builders emit against the installed SDK's `create` signature, so a
+knob that the provider does not have can no longer wait for a live call to
+be found; they skip where the SDKs are not installed (the cloud session) and
+run on the Mac and in CI.
+
+---
+
 ## 14 · Node ids moved with pytest's rootdir, so a repository with `tests/pytest.ini` had no hidden tests
 
 **Date:** 2026-09-25 · **Area:** sandbox plugin × task authoring · **Severity:** medium

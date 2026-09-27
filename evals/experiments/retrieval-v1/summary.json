@@ -1,0 +1,1130 @@
+{
+  "kind": "retrieval",
+  "configs": {
+    "bm25": {
+      "recall5_file": 0.78,
+      "recall10_file": 0.88,
+      "mrr_file": 0.6242,
+      "recall5_symbol": 0.64,
+      "recall10_symbol": 0.74,
+      "mrr_symbol": 0.4144,
+      "query_ms": 4.7768,
+      "query_ms_p50": 4.21,
+      "tasks": 50,
+      "misses_file": [
+        "cachetools_005",
+        "click_008",
+        "jinja_002",
+        "jinja_004",
+        "rich_005",
+        "sqlparse_003"
+      ],
+      "misses_symbol": [
+        "cachetools_005",
+        "click_001",
+        "click_002",
+        "click_008",
+        "jinja_002",
+        "jinja_003",
+        "jinja_004",
+        "jinja_005",
+        "jinja_008",
+        "rich_005",
+        "rich_007",
+        "rich_008",
+        "sqlparse_003"
+      ]
+    },
+    "dense": {
+      "recall5_file": 0.76,
+      "recall10_file": 0.84,
+      "mrr_file": 0.6611,
+      "recall5_symbol": 0.6,
+      "recall10_symbol": 0.74,
+      "mrr_symbol": 0.4186,
+      "query_ms": 67.5746,
+      "query_ms_p50": 62.81,
+      "tasks": 50,
+      "misses_file": [
+        "click_008",
+        "jinja_002",
+        "jinja_003",
+        "rich_002",
+        "rich_005",
+        "rich_008",
+        "sqlparse_005",
+        "sqlparse_007"
+      ],
+      "misses_symbol": [
+        "click_001",
+        "click_007",
+        "click_008",
+        "jinja_002",
+        "jinja_003",
+        "jinja_005",
+        "jinja_007",
+        "rich_002",
+        "rich_005",
+        "rich_007",
+        "rich_008",
+        "sqlparse_005",
+        "sqlparse_007"
+      ]
+    },
+    "symbol": {
+      "recall5_file": 0.4,
+      "recall10_file": 0.42,
+      "mrr_file": 0.2845,
+      "recall5_symbol": 0.32,
+      "recall10_symbol": 0.38,
+      "mrr_symbol": 0.2174,
+      "query_ms": 1.4036,
+      "query_ms_p50": 1.24,
+      "tasks": 50,
+      "misses_file": [
+        "cachetools_005",
+        "click_001",
+        "click_002",
+        "click_003",
+        "click_004",
+        "click_005",
+        "click_006",
+        "click_007",
+        "click_008",
+        "click_009",
+        "jinja_002",
+        "jinja_003",
+        "jinja_004",
+        "jinja_005",
+        "jinja_008",
+        "jinja_009",
+        "rich_002",
+        "rich_003",
+        "rich_004",
+        "rich_005",
+        "rich_007",
+        "rich_008",
+        "sqlparse_001",
+        "sqlparse_002",
+        "sqlparse_003",
+        "sqlparse_004",
+        "sqlparse_005",
+        "sqlparse_007",
+        "sqlparse_008"
+      ],
+      "misses_symbol": [
+        "cachetools_005",
+        "click_001",
+        "click_002",
+        "click_003",
+        "click_004",
+        "click_005",
+        "click_006",
+        "click_007",
+        "click_008",
+        "click_009",
+        "jinja_002",
+        "jinja_003",
+        "jinja_004",
+        "jinja_005",
+        "jinja_008",
+        "jinja_009",
+        "rich_002",
+        "rich_003",
+        "rich_004",
+        "rich_005",
+        "rich_007",
+        "rich_008",
+        "sqlparse_001",
+        "sqlparse_002",
+        "sqlparse_003",
+        "sqlparse_004",
+        "sqlparse_005",
+        "sqlparse_006",
+        "sqlparse_007",
+        "sqlparse_008",
+        "sqlparse_009"
+      ]
+    },
+    "bm25+dense": {
+      "recall5_file": 0.8,
+      "recall10_file": 0.88,
+      "mrr_file": 0.6479,
+      "recall5_symbol": 0.66,
+      "recall10_symbol": 0.72,
+      "mrr_symbol": 0.4674,
+      "query_ms": 63.633,
+      "query_ms_p50": 68.82,
+      "tasks": 50,
+      "misses_file": [
+        "cachetools_005",
+        "click_008",
+        "jinja_002",
+        "rich_002",
+        "rich_005",
+        "rich_008"
+      ],
+      "misses_symbol": [
+        "cachetools_005",
+        "click_001",
+        "click_008",
+        "jinja_002",
+        "jinja_003",
+        "jinja_004",
+        "jinja_005",
+        "jinja_007",
+        "jinja_008",
+        "rich_002",
+        "rich_005",
+        "rich_007",
+        "rich_008",
+        "sqlparse_007"
+      ]
+    },
+    "bm25+dense+symbol": {
+      "recall5_file": 0.72,
+      "recall10_file": 0.88,
+      "mrr_file": 0.58,
+      "recall5_symbol": 0.66,
+      "recall10_symbol": 0.7,
+      "mrr_symbol": 0.4844,
+      "query_ms": 66.827,
+      "query_ms_p50": 71.28,
+      "tasks": 50,
+      "misses_file": [
+        "cachetools_005",
+        "click_008",
+        "jinja_002",
+        "rich_002",
+        "rich_005",
+        "rich_008"
+      ],
+      "misses_symbol": [
+        "cachetools_005",
+        "click_001",
+        "click_007",
+        "click_008",
+        "jinja_002",
+        "jinja_003",
+        "jinja_004",
+        "jinja_005",
+        "jinja_008",
+        "rich_002",
+        "rich_005",
+        "rich_007",
+        "rich_008",
+        "sqlparse_003",
+        "sqlparse_007"
+      ]
+    }
+  },
+  "by_group": {
+    "suite": {
+      "v0": {
+        "bm25": {
+          "recall5_file": 0.9286,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.8571,
+          "tasks": 14
+        },
+        "dense": {
+          "recall5_file": 0.9286,
+          "recall10_file": 1.0,
+          "mrr_file": 0.869,
+          "tasks": 14
+        },
+        "symbol": {
+          "recall5_file": 0.8571,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.6471,
+          "tasks": 14
+        },
+        "bm25+dense": {
+          "recall5_file": 0.9286,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.8571,
+          "tasks": 14
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.9286,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.9286,
+          "tasks": 14
+        }
+      },
+      "v1": {
+        "bm25": {
+          "recall5_file": 0.7222,
+          "recall10_file": 0.8611,
+          "mrr_file": 0.5336,
+          "tasks": 36
+        },
+        "dense": {
+          "recall5_file": 0.6944,
+          "recall10_file": 0.7778,
+          "mrr_file": 0.5802,
+          "tasks": 36
+        },
+        "symbol": {
+          "recall5_file": 0.2222,
+          "recall10_file": 0.2222,
+          "mrr_file": 0.1435,
+          "tasks": 36
+        },
+        "bm25+dense": {
+          "recall5_file": 0.75,
+          "recall10_file": 0.8611,
+          "mrr_file": 0.5665,
+          "tasks": 36
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.6389,
+          "recall10_file": 0.8611,
+          "mrr_file": 0.4444,
+          "tasks": 36
+        }
+      }
+    },
+    "report_level": {
+      "internal": {
+        "bm25": {
+          "recall5_file": 0.9286,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.8571,
+          "tasks": 14
+        },
+        "dense": {
+          "recall5_file": 0.9286,
+          "recall10_file": 1.0,
+          "mrr_file": 0.869,
+          "tasks": 14
+        },
+        "symbol": {
+          "recall5_file": 0.8571,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.6471,
+          "tasks": 14
+        },
+        "bm25+dense": {
+          "recall5_file": 0.9286,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.8571,
+          "tasks": 14
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.9286,
+          "recall10_file": 0.9286,
+          "mrr_file": 0.9286,
+          "tasks": 14
+        }
+      },
+      "public_api": {
+        "bm25": {
+          "recall5_file": 0.875,
+          "recall10_file": 1.0,
+          "mrr_file": 0.6521,
+          "tasks": 24
+        },
+        "dense": {
+          "recall5_file": 0.75,
+          "recall10_file": 0.875,
+          "mrr_file": 0.6203,
+          "tasks": 24
+        },
+        "symbol": {
+          "recall5_file": 0.2917,
+          "recall10_file": 0.2917,
+          "mrr_file": 0.1736,
+          "tasks": 24
+        },
+        "bm25+dense": {
+          "recall5_file": 0.8333,
+          "recall10_file": 0.9583,
+          "mrr_file": 0.6518,
+          "tasks": 24
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.7083,
+          "recall10_file": 0.9583,
+          "mrr_file": 0.5305,
+          "tasks": 24
+        }
+      },
+      "symptom_only": {
+        "bm25": {
+          "recall5_file": 0.4167,
+          "recall10_file": 0.5833,
+          "mrr_file": 0.2965,
+          "tasks": 12
+        },
+        "dense": {
+          "recall5_file": 0.5833,
+          "recall10_file": 0.5833,
+          "mrr_file": 0.5,
+          "tasks": 12
+        },
+        "symbol": {
+          "recall5_file": 0.0833,
+          "recall10_file": 0.0833,
+          "mrr_file": 0.0833,
+          "tasks": 12
+        },
+        "bm25+dense": {
+          "recall5_file": 0.5833,
+          "recall10_file": 0.6667,
+          "mrr_file": 0.3958,
+          "tasks": 12
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.5,
+          "recall10_file": 0.6667,
+          "mrr_file": 0.2722,
+          "tasks": 12
+        }
+      }
+    },
+    "cross_module": {
+      "False": {
+        "bm25": {
+          "recall5_file": 1.0,
+          "recall10_file": 1.0,
+          "mrr_file": 0.9048,
+          "tasks": 21
+        },
+        "dense": {
+          "recall5_file": 1.0,
+          "recall10_file": 1.0,
+          "mrr_file": 0.9286,
+          "tasks": 21
+        },
+        "symbol": {
+          "recall5_file": 0.8571,
+          "recall10_file": 0.9048,
+          "mrr_file": 0.6378,
+          "tasks": 21
+        },
+        "bm25+dense": {
+          "recall5_file": 1.0,
+          "recall10_file": 1.0,
+          "mrr_file": 0.9286,
+          "tasks": 21
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 1.0,
+          "recall10_file": 1.0,
+          "mrr_file": 0.9643,
+          "tasks": 21
+        }
+      },
+      "True": {
+        "bm25": {
+          "recall5_file": 0.6207,
+          "recall10_file": 0.7931,
+          "mrr_file": 0.421,
+          "tasks": 29
+        },
+        "dense": {
+          "recall5_file": 0.5862,
+          "recall10_file": 0.7241,
+          "mrr_file": 0.4674,
+          "tasks": 29
+        },
+        "symbol": {
+          "recall5_file": 0.069,
+          "recall10_file": 0.069,
+          "mrr_file": 0.0287,
+          "tasks": 29
+        },
+        "bm25+dense": {
+          "recall5_file": 0.6552,
+          "recall10_file": 0.7931,
+          "mrr_file": 0.4446,
+          "tasks": 29
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.5172,
+          "recall10_file": 0.7931,
+          "mrr_file": 0.3017,
+          "tasks": 29
+        }
+      }
+    },
+    "hidden_only": {
+      "False": {
+        "bm25": {
+          "recall5_file": 0.913,
+          "recall10_file": 0.9565,
+          "mrr_file": 0.704,
+          "tasks": 23
+        },
+        "dense": {
+          "recall5_file": 0.8261,
+          "recall10_file": 0.913,
+          "mrr_file": 0.6743,
+          "tasks": 23
+        },
+        "symbol": {
+          "recall5_file": 0.4783,
+          "recall10_file": 0.5217,
+          "mrr_file": 0.4011,
+          "tasks": 23
+        },
+        "bm25+dense": {
+          "recall5_file": 0.8696,
+          "recall10_file": 0.913,
+          "mrr_file": 0.7033,
+          "tasks": 23
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.7826,
+          "recall10_file": 0.913,
+          "mrr_file": 0.7062,
+          "tasks": 23
+        }
+      },
+      "True": {
+        "bm25": {
+          "recall5_file": 0.6667,
+          "recall10_file": 0.8148,
+          "mrr_file": 0.5562,
+          "tasks": 27
+        },
+        "dense": {
+          "recall5_file": 0.7037,
+          "recall10_file": 0.7778,
+          "mrr_file": 0.6498,
+          "tasks": 27
+        },
+        "symbol": {
+          "recall5_file": 0.3333,
+          "recall10_file": 0.3333,
+          "mrr_file": 0.1852,
+          "tasks": 27
+        },
+        "bm25+dense": {
+          "recall5_file": 0.7407,
+          "recall10_file": 0.8519,
+          "mrr_file": 0.6007,
+          "tasks": 27
+        },
+        "bm25+dense+symbol": {
+          "recall5_file": 0.6667,
+          "recall10_file": 0.8519,
+          "mrr_file": 0.4724,
+          "tasks": 27
+        }
+      }
+    }
+  },
+  "embedder": "BAAI--bge-small-en-v1.5",
+  "k": 10,
+  "tasks": 50,
+  "started_at": "2026-09-26T15:55:22+00:00",
+  "duration_seconds": 922.0,
+  "indexes": {
+    "cachetools_001": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.097,
+      "embedded": 0,
+      "searches": 5
+    },
+    "cachetools_002": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.095,
+      "embedded": 0,
+      "searches": 5
+    },
+    "cachetools_003": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.094,
+      "embedded": 0,
+      "searches": 5
+    },
+    "cachetools_004": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.093,
+      "embedded": 0,
+      "searches": 5
+    },
+    "cachetools_005": {
+      "chunks": 413,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.123,
+      "embedded": 0,
+      "searches": 5
+    },
+    "click_001": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 132.727,
+      "embedded": 1120,
+      "searches": 5
+    },
+    "click_002": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.768,
+      "embedded": 2,
+      "searches": 5
+    },
+    "click_003": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.643,
+      "embedded": 2,
+      "searches": 5
+    },
+    "click_004": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.587,
+      "embedded": 1,
+      "searches": 5
+    },
+    "click_005": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.623,
+      "embedded": 1,
+      "searches": 5
+    },
+    "click_006": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.628,
+      "embedded": 1,
+      "searches": 5
+    },
+    "click_007": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.584,
+      "embedded": 1,
+      "searches": 5
+    },
+    "click_008": {
+      "chunks": 1120,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.563,
+      "embedded": 1,
+      "searches": 5
+    },
+    "click_009": {
+      "chunks": 1084,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 10.344,
+      "embedded": 91,
+      "searches": 5
+    },
+    "jinja_001": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 249.256,
+      "embedded": 1730,
+      "searches": 5
+    },
+    "jinja_002": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.074,
+      "embedded": 3,
+      "searches": 5
+    },
+    "jinja_003": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.868,
+      "embedded": 1,
+      "searches": 5
+    },
+    "jinja_004": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.963,
+      "embedded": 1,
+      "searches": 5
+    },
+    "jinja_005": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.907,
+      "embedded": 1,
+      "searches": 5
+    },
+    "jinja_006": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.902,
+      "embedded": 2,
+      "searches": 5
+    },
+    "jinja_007": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.901,
+      "embedded": 1,
+      "searches": 5
+    },
+    "jinja_008": {
+      "chunks": 1730,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.99,
+      "embedded": 2,
+      "searches": 5
+    },
+    "jinja_009": {
+      "chunks": 1683,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 44.261,
+      "embedded": 275,
+      "searches": 5
+    },
+    "rich_001": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 298.8,
+      "embedded": 2032,
+      "searches": 5
+    },
+    "rich_002": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.449,
+      "embedded": 2,
+      "searches": 5
+    },
+    "rich_003": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.38,
+      "embedded": 1,
+      "searches": 5
+    },
+    "rich_004": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.48,
+      "embedded": 2,
+      "searches": 5
+    },
+    "rich_005": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.439,
+      "embedded": 1,
+      "searches": 5
+    },
+    "rich_006": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.538,
+      "embedded": 3,
+      "searches": 5
+    },
+    "rich_007": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.376,
+      "embedded": 1,
+      "searches": 5
+    },
+    "rich_008": {
+      "chunks": 2032,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.383,
+      "embedded": 1,
+      "searches": 5
+    },
+    "rich_009": {
+      "chunks": 2026,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 11.536,
+      "embedded": 77,
+      "searches": 5
+    },
+    "sqlparse_001": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 89.65,
+      "embedded": 544,
+      "searches": 5
+    },
+    "sqlparse_002": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.506,
+      "embedded": 4,
+      "searches": 5
+    },
+    "sqlparse_003": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.276,
+      "embedded": 2,
+      "searches": 5
+    },
+    "sqlparse_004": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.267,
+      "embedded": 1,
+      "searches": 5
+    },
+    "sqlparse_005": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.312,
+      "embedded": 1,
+      "searches": 5
+    },
+    "sqlparse_006": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.269,
+      "embedded": 1,
+      "searches": 5
+    },
+    "sqlparse_007": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.271,
+      "embedded": 1,
+      "searches": 5
+    },
+    "sqlparse_008": {
+      "chunks": 544,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 1.284,
+      "embedded": 1,
+      "searches": 5
+    },
+    "sqlparse_009": {
+      "chunks": 502,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 22.401,
+      "embedded": 144,
+      "searches": 5
+    },
+    "tenacity_001": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.296,
+      "embedded": 0,
+      "searches": 5
+    },
+    "tenacity_002": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.267,
+      "embedded": 0,
+      "searches": 5
+    },
+    "tenacity_003": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.278,
+      "embedded": 0,
+      "searches": 5
+    },
+    "tenacity_004": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.298,
+      "embedded": 0,
+      "searches": 5
+    },
+    "tenacity_005": {
+      "chunks": 522,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.286,
+      "embedded": 0,
+      "searches": 5
+    },
+    "toolz_001": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.295,
+      "embedded": 0,
+      "searches": 5
+    },
+    "toolz_002": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.293,
+      "embedded": 0,
+      "searches": 5
+    },
+    "toolz_003": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.288,
+      "embedded": 0,
+      "searches": 5
+    },
+    "toolz_004": {
+      "chunks": 448,
+      "channels": [
+        "bm25",
+        "dense",
+        "symbol"
+      ],
+      "embedder": "BAAI--bge-small-en-v1.5",
+      "build_seconds": 0.296,
+      "embedded": 0,
+      "searches": 5
+    }
+  },
+  "index_build_seconds_total": 892.31,
+  "chunks_total": 55170,
+  "embedded_total": 6055,
+  "archived_from": "results/retrieval-20260926-115522-07b2"
+}

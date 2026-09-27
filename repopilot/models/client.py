@@ -183,8 +183,10 @@ class AnthropicClient:
                 # The history may hold tool_use blocks, which the API only accepts
                 # when tools are defined; "none" keeps them defined but unusable.
                 request["tool_choice"] = {"type": "none"}
-        if temperature is not None:
-            request["temperature"] = temperature
+        # `temperature` is accepted for interface symmetry only: the Messages API
+        # of the installed SDK (anthropic 1.x) has no sampling temperature, and
+        # `Messages.create` rejects the keyword outright (issue #15). Callers that
+        # want a deterministic probe get the provider's default sampling here.
         return request
 
     # -- response -----------------------------------------------------------------

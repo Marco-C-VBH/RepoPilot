@@ -126,11 +126,34 @@ uv run python scripts/memorization_probe.py --models claude-haiku-4-5-20251001 c
 uv run python scripts/archive_run.py results/<probe dir> memorization-v1
 ```
 
-| | expected | measured |
+| | expected | measured (run 1, `memorization-20260926-130404-fbd6`) |
 |---|---|---|
-| recalled share (similarity ≥ 0.9), v0 vs v1-new, per model | v0 higher than v1-new for every model | |
-| real tasks: `ratio_fixed` by models released after the fix | reported per task, no expectation | |
-| arm-D success conditioned on recall (join with §2's D per task) | the measurement; no expectation | |
+| recalled share (similarity ≥ 0.9), v0 vs v1-new, per model | v0 higher than v1-new for every model | ✓ Haiku 5 / 14 = 36 % vs 0 / 45 = 0 %; Sonnet 8 / 14 = 57 % vs 19 / 45 = 42 %; luna 7 / 14 = 50 % vs 3 / 45 = 7 % |
+| real tasks: `ratio_fixed` by models released after the fix | reported per task, no expectation | Sonnet reproduces the *fixed* code of sqlparse_009 (`match` 1.00, `TypedLiteral` 0.98; 0.76 / 0.84 against the buggy base) and of jinja_009's `dump_stores` (1.00 vs 0.98 — the fix is one `sorted`); click_009 0.81 and rich_009 0.59 either way. Haiku and luna recall none of the six fixed symbols |
+| arm-D success conditioned on recall (join with §2's D per task) | the measurement; no expectation | luna, 50 tasks: with a recalled gold symbol D passes 4 / 9, without 4 / 41. Its 9 recalls are 7 v0 tasks + jinja_001 and jinja_007 (both fail in D); the two v1-new D passes (click_004, rich_003) are not recalled |
+
+59 of the 60 gold symbols probed (rich_008's `traverse._traverse` is 252
+lines, above the 200-line cap), three models, cost $0.89 (Sonnet $0.66),
+35 min. Median similarity: Haiku 0.64 (v0) / 0.31 (v1-new), Sonnet 0.97 /
+0.85, luna 0.48 / 0.38. By repository (Sonnet, the only model with recall on
+v1-new): toolz 4 / 4, tenacity 3 / 5, jinja 7 / 13, click 5 / 10, sqlparse
+5 / 13, rich 2 / 9, cachetools 1 / 5 — the 2020 base of sqlparse_009 and the
+2021 base of jinja_009 are among the best-known code in the set.
+
+Reading. The pre-registered direction holds for all three models: the v0
+libraries are the memorized ones; on v1-new Haiku and luna recall almost
+nothing (0 and 3 symbols of 45), and their arm-D results are consistent with
+that — a memorized symbol makes the fault findable without a report (D 4 / 9
+with recall, 4 / 41 without), and v1-new has taken that route away from the
+cheap models. Sonnet is the exception to keep in view: it recalls 42 % of the
+v1-new gold symbols verbatim, and for sqlparse_009 it recalls the *fixed*
+version, so on that task a Sonnet agent can reproduce the fix from memory;
+Sonnet's v1-new success will be reported with the recalled tasks marked, and
+sqlparse_009's result under Sonnet is not evidence of debugging. Two
+measurement notes: rich_004's row in run 1 names `Console.render`, not the
+gold `markup.render` — the probe resolved a bare name to the wrong file
+(issue #16, fixed; the run is repeated so the archived numbers are clean),
+and nested gold functions above the line cap stay outside the measurement.
 
 ## 4. Offline retrieval (design §9.4; no model, first rich index 3–5 min)
 
@@ -145,12 +168,40 @@ rows from the `suite` group.
 
 | v1-new (36) | expected | measured |
 |---|---|---|
-| fused Recall@10 (file) | 0.55–0.80 (v0: 0.93) | |
-| fused MRR (file) | 0.35–0.60 (v0: 0.93) | |
-| dense − BM25, Recall@10 on `symptom_only` | ≥ +0.10 | |
-| symbol channel on `symptom_only` | near zero | |
-| `real` tasks | no prediction, reported | |
+| fused Recall@10 (file) | 0.55–0.80 (v0: 0.93) | **0.86** (bm25+dense; three channels also 0.86) — above the range; v0 0.93 |
+| fused MRR (file) | 0.35–0.60 (v0: 0.93) | **0.57** ✓ (bm25+dense; three channels 0.44); v0 0.86 / 0.93 |
+| dense − BM25, Recall@10 on `symptom_only` | ≥ +0.10 | **0.00** ✗ (0.58 vs 0.58, n = 12); on MRR dense leads by +0.20 (0.50 vs 0.30) |
+| symbol channel on `symptom_only` | near zero | **0.08** ✓ (0.29 on `public_api`, 0.93 on v0) |
+| `real` tasks | no prediction, reported | all four found: fused first-hit rank 1 (click_009), 2 (jinja_009), 1 (rich_009), 1 (sqlparse_009) |
 
+Run `retrieval-20260926-115522-07b2` (2026-09-26, `BAAI/bge-small-en-v1.5`,
+k = 10, 50 tasks, 55,170 chunks). Index build 892 s in total: rich 299 s,
+jinja 249 s, click 133 s, sqlparse 90 s, the real-fix base commits 10–44 s
+each, everything else from the cache; a query costs 4.8 ms (BM25) / 68 ms
+(dense). Per channel on v1-new: BM25 R@10 0.86 / MRR 0.53, dense 0.78 / 0.58,
+symbol 0.22 / 0.14, bm25+dense 0.86 / 0.57, all three 0.86 / 0.44. By
+`cross_module`: 1.00 / 0.93 on the 21 same-module tasks, 0.79 / 0.44 on the
+29 cross-module ones (fused). By `hidden_only`: 0.85 / 0.60 on the 27
+hidden-only tasks.
+
+The five fused misses at k = 10 are click_008 (`_textwrap.py`), jinja_002
+(`nodes.py`), rich_002 (`style.py`), rich_005 (`_ratio.py`) and rich_008
+(`pretty.py`) — four of them `symptom_only`, and two of them (rich_002,
+rich_008) are hits for BM25 alone at rank 10 and 8 that the fusion drops:
+the agreement reward of RRF buries a single-channel hit, as it did for
+cachetools_005 on v0. On the twelve `symptom_only` tasks the two channels
+miss different tasks (dense finds jinja_004 and sqlparse_003, BM25 finds
+rich_002 and sqlparse_005), so their Recall@10 ties at 7 / 12 while dense
+ranks its hits higher (first hit at rank 1 in 5 of its 7, BM25 in 2 of
+its 7); the predicted
+dense advantage shows on MRR, not on recall, and the symbol channel is
+irrelevant there as predicted. The symbol channel's collapse (0.93 on v0 →
+0.22 on v1-new) is the audit's report rule at work: the reports no longer
+name the changed symbol, so a channel that matches identifiers has nothing
+to match. Recall@10 landing above the predicted range means the reports
+still locate the file more often than expected — it is the *rank* that got
+harder (MRR 0.57 vs 0.86), which is what the agent-level `evidence` arm will
+have to work with.
 ## What goes forward
 
 Step 1 is the acceptance bar (design §9.1): all four rows green or the
