@@ -252,6 +252,7 @@ once each — never opened the gold file). Eight tasks pass both repeats
 sqlparse_005, sqlparse_007), 18 fail both, 10 flip; against `none` the
 baseline is better on four tasks (click_003, jinja_001, jinja_006,
 sqlparse_007 — one run each, inside the flip rate) and worse on 22.
+rich_006 and jinja_008 stay unsolved: 0 / 8 and 1 / 8 runs with this row.
 
 What the number means, and what it does not. It is the same-model,
 same-cap comparison the README can state: on v1-new the structured compact
