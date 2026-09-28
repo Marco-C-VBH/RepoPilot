@@ -1,0 +1,194 @@
+{
+  "run_id": "baseline-20260928-024416-1470",
+  "solver": "baseline",
+  "tasks": 36,
+  "repeat": 1,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 5,
+    "PASS": 31
+  },
+  "pass_rate": 0.8611,
+  "deterministic": null,
+  "nondeterministic_tasks": [],
+  "duration_seconds": 1161.508,
+  "started_at": "2026-09-28T06:44:16+00:00",
+  "finished_at": "2026-09-28T07:03:37+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/baseline-20260928-024416-1470",
+  "model": "claude-sonnet-5",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "context": null,
+  "retrieval": null,
+  "suite": "v1-new",
+  "report": "full",
+  "run_tests_tool": true,
+  "agent": {
+    "results": 36,
+    "success_rate": 0.8611,
+    "patch_rate": 0.8611,
+    "regression_rate": 0.0,
+    "avg_steps": 9.278,
+    "avg_tool_calls": 9.667,
+    "avg_test_runs": 1.167,
+    "invalid_tool_call_rate": 0.0144,
+    "edits": 43,
+    "failed_edits": 0,
+    "tolerant_edits": 0,
+    "edit_failure_rate": 0.0,
+    "terminations": {
+      "done": 29,
+      "budget_tokens": 7
+    },
+    "tokens_mean": 57404,
+    "tokens_median": 49140,
+    "cost_total_usd": 4.7218,
+    "cost_mean_usd": 0.131,
+    "cost_median_usd": 0.119,
+    "solve_p50_seconds": 27.8,
+    "solve_p95_seconds": 74.6,
+    "failures": {
+      "budget_exceeded": 5
+    },
+    "localization": {
+      "runs_with_an_edit": 32,
+      "first_edit_in_gold_file": 32,
+      "gold_file_read_before_first_edit": 32,
+      "gold_file_read": 36,
+      "first_edit_in_gold_file_rate": 1.0,
+      "gold_file_read_rate": 1.0
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 3,
+        "total": 3
+      },
+      "exception_handling": {
+        "pass": 3,
+        "total": 3
+      },
+      "missing_check": {
+        "pass": 5,
+        "total": 6
+      },
+      "off_by_one": {
+        "pass": 5,
+        "total": 5
+      },
+      "ordering": {
+        "pass": 4,
+        "total": 4
+      },
+      "propagation": {
+        "pass": 4,
+        "total": 6
+      },
+      "state_management": {
+        "pass": 4,
+        "total": 4
+      },
+      "wrong_condition": {
+        "pass": 3,
+        "total": 5
+      }
+    },
+    "by_difficulty": {
+      "hard": {
+        "pass": 23,
+        "total": 26
+      },
+      "medium": {
+        "pass": 8,
+        "total": 10
+      }
+    },
+    "by_suite": {
+      "v1": {
+        "pass": 31,
+        "total": 36
+      }
+    },
+    "by_repo": {
+      "click": {
+        "pass": 9,
+        "total": 9
+      },
+      "jinja": {
+        "pass": 8,
+        "total": 9
+      },
+      "rich": {
+        "pass": 6,
+        "total": 9
+      },
+      "sqlparse": {
+        "pass": 8,
+        "total": 9
+      }
+    },
+    "by_report_level": {
+      "public_api": {
+        "pass": 21,
+        "total": 24
+      },
+      "symptom_only": {
+        "pass": 10,
+        "total": 12
+      }
+    },
+    "by_hidden_only": {
+      "False": {
+        "pass": 8,
+        "total": 11
+      },
+      "True": {
+        "pass": 23,
+        "total": 25
+      }
+    },
+    "by_cross_module": {
+      "False": {
+        "pass": 7,
+        "total": 8
+      },
+      "True": {
+        "pass": 24,
+        "total": 28
+      }
+    },
+    "by_shape": {
+      "cross_file": {
+        "pass": 5,
+        "total": 5
+      },
+      "multi_line": {
+        "pass": 6,
+        "total": 6
+      },
+      "multi_site": {
+        "pass": 4,
+        "total": 6
+      },
+      "single_line": {
+        "pass": 16,
+        "total": 19
+      }
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/baseline-20260928-024416-1470"
+}

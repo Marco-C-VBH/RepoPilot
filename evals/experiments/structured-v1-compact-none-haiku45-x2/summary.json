@@ -1,0 +1,236 @@
+{
+  "run_id": "structured-20260928-000838-ceb2",
+  "solver": "structured",
+  "tasks": 36,
+  "repeat": 2,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 21,
+    "PASS": 51
+  },
+  "pass_rate": 0.7083,
+  "deterministic": false,
+  "nondeterministic_tasks": [
+    "click_001",
+    "click_003",
+    "jinja_003",
+    "jinja_006",
+    "jinja_008",
+    "jinja_009",
+    "rich_001",
+    "rich_002",
+    "rich_005",
+    "rich_006",
+    "sqlparse_001",
+    "sqlparse_007",
+    "sqlparse_008"
+  ],
+  "duration_seconds": 3120.746,
+  "started_at": "2026-09-28T04:08:38+00:00",
+  "finished_at": "2026-09-28T05:00:39+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/structured-20260928-000838-ceb2",
+  "model": "claude-haiku-4-5-20251001",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "context": "compact",
+  "retrieval": null,
+  "suite": "v1-new",
+  "report": "full",
+  "run_tests_tool": null,
+  "agent": {
+    "results": 72,
+    "success_rate": 0.7083,
+    "patch_rate": 0.9028,
+    "regression_rate": 0.0278,
+    "avg_steps": 15.639,
+    "avg_tool_calls": 15.736,
+    "avg_test_runs": 1.861,
+    "invalid_tool_call_rate": 0.0124,
+    "edits": 89,
+    "failed_edits": 5,
+    "tolerant_edits": 2,
+    "edit_failure_rate": 0.0532,
+    "terminations": {
+      "budget_tokens": 24,
+      "done": 48
+    },
+    "tokens_mean": 71524,
+    "tokens_median": 64368,
+    "cost_total_usd": 6.0363,
+    "cost_mean_usd": 0.084,
+    "cost_median_usd": 0.0757,
+    "solve_p50_seconds": 39.8,
+    "solve_p95_seconds": 56.7,
+    "failures": {
+      "budget_exceeded": 12,
+      "incorrect_patch": 6,
+      "regression_introduced": 2,
+      "wrong_localization": 1
+    },
+    "localization": {
+      "runs_with_an_edit": 68,
+      "first_edit_in_gold_file": 58,
+      "gold_file_read_before_first_edit": 66,
+      "gold_file_read": 72,
+      "first_edit_in_gold_file_rate": 0.8529,
+      "gold_file_read_rate": 1.0
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 2,
+        "total": 6
+      },
+      "exception_handling": {
+        "pass": 4,
+        "total": 6
+      },
+      "missing_check": {
+        "pass": 10,
+        "total": 12
+      },
+      "off_by_one": {
+        "pass": 8,
+        "total": 10
+      },
+      "ordering": {
+        "pass": 5,
+        "total": 8
+      },
+      "propagation": {
+        "pass": 8,
+        "total": 12
+      },
+      "state_management": {
+        "pass": 6,
+        "total": 8
+      },
+      "wrong_condition": {
+        "pass": 8,
+        "total": 10
+      }
+    },
+    "by_difficulty": {
+      "hard": {
+        "pass": 40,
+        "total": 52
+      },
+      "medium": {
+        "pass": 11,
+        "total": 20
+      }
+    },
+    "by_suite": {
+      "v1": {
+        "pass": 51,
+        "total": 72
+      }
+    },
+    "by_repo": {
+      "click": {
+        "pass": 16,
+        "total": 18
+      },
+      "jinja": {
+        "pass": 12,
+        "total": 18
+      },
+      "rich": {
+        "pass": 11,
+        "total": 18
+      },
+      "sqlparse": {
+        "pass": 12,
+        "total": 18
+      }
+    },
+    "by_report_level": {
+      "public_api": {
+        "pass": 33,
+        "total": 48
+      },
+      "symptom_only": {
+        "pass": 18,
+        "total": 24
+      }
+    },
+    "by_hidden_only": {
+      "False": {
+        "pass": 12,
+        "total": 22
+      },
+      "True": {
+        "pass": 39,
+        "total": 50
+      }
+    },
+    "by_cross_module": {
+      "False": {
+        "pass": 9,
+        "total": 16
+      },
+      "True": {
+        "pass": 42,
+        "total": 56
+      }
+    },
+    "by_shape": {
+      "cross_file": {
+        "pass": 6,
+        "total": 10
+      },
+      "multi_line": {
+        "pass": 9,
+        "total": 12
+      },
+      "multi_site": {
+        "pass": 7,
+        "total": 12
+      },
+      "single_line": {
+        "pass": 29,
+        "total": 38
+      }
+    },
+    "runtime": {
+      "results": 72,
+      "verified_rate": 0.7222,
+      "loop_rate": 0.0,
+      "intervention_rate": 0.8889,
+      "avg_steps_after_green": 0.0,
+      "avg_initial_failures": 1.0,
+      "steps_by_phase": {
+        "analyze": 10,
+        "finalize": 44,
+        "localize": 603,
+        "patch": 397,
+        "plan": 72
+      },
+      "loop_interventions": 0,
+      "repeated_tool_calls": 59,
+      "rereads": 59,
+      "refused_tool_calls": 0,
+      "forced_transitions": 69,
+      "nudges": 0,
+      "analyze_rounds": 10,
+      "workspace_resets": 5,
+      "finalize_continues": 3,
+      "retrieve_calls": 0
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/structured-20260928-000838-ceb2"
+}

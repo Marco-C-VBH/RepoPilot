@@ -1,0 +1,208 @@
+{
+  "run_id": "baseline-20260928-035556-5905",
+  "solver": "baseline",
+  "tasks": 36,
+  "repeat": 2,
+  "counts": {
+    "ERROR": 0,
+    "FAIL": 46,
+    "PASS": 26
+  },
+  "pass_rate": 0.3611,
+  "deterministic": false,
+  "nondeterministic_tasks": [
+    "click_006",
+    "click_008",
+    "click_009",
+    "jinja_001",
+    "jinja_007",
+    "rich_003",
+    "rich_004",
+    "rich_008",
+    "sqlparse_001",
+    "sqlparse_002",
+    "sqlparse_006"
+  ],
+  "duration_seconds": 2163.712,
+  "started_at": "2026-09-28T07:55:56+00:00",
+  "finished_at": "2026-09-28T08:32:00+00:00",
+  "limits": {
+    "cpus": 1.0,
+    "memory": "2g",
+    "pids_limit": 256,
+    "network": "none",
+    "timeout_seconds": 600,
+    "workspace": "/workspace"
+  },
+  "results_dir": "results/baseline-20260928-035556-5905",
+  "model": "claude-haiku-4-5-20251001",
+  "budget": {
+    "max_steps": 30,
+    "max_tool_calls": 40,
+    "max_test_runs": 5,
+    "max_tokens": 100000,
+    "max_cost_usd": 0.5,
+    "max_runtime_seconds": 600.0
+  },
+  "context": null,
+  "retrieval": null,
+  "suite": "v1-new",
+  "report": "full",
+  "run_tests_tool": true,
+  "agent": {
+    "results": 72,
+    "success_rate": 0.3611,
+    "patch_rate": 0.4444,
+    "regression_rate": 0.0139,
+    "avg_steps": 16.472,
+    "avg_tool_calls": 16.556,
+    "avg_test_runs": 1.5,
+    "invalid_tool_call_rate": 0.0025,
+    "edits": 43,
+    "failed_edits": 0,
+    "tolerant_edits": 3,
+    "edit_failure_rate": 0.0,
+    "terminations": {
+      "budget_tokens": 70,
+      "done": 2
+    },
+    "tokens_mean": 105679,
+    "tokens_median": 106548,
+    "cost_total_usd": 8.2237,
+    "cost_mean_usd": 0.114,
+    "cost_median_usd": 0.1139,
+    "solve_p50_seconds": 28.1,
+    "solve_p95_seconds": 42.6,
+    "failures": {
+      "budget_exceeded": 41,
+      "regression_introduced": 1,
+      "retrieval_failure": 4
+    },
+    "localization": {
+      "runs_with_an_edit": 32,
+      "first_edit_in_gold_file": 32,
+      "gold_file_read_before_first_edit": 32,
+      "gold_file_read": 68,
+      "first_edit_in_gold_file_rate": 1.0,
+      "gold_file_read_rate": 0.9444
+    },
+    "by_category": {
+      "cache_invalidation": {
+        "pass": 0,
+        "total": 6
+      },
+      "exception_handling": {
+        "pass": 2,
+        "total": 6
+      },
+      "missing_check": {
+        "pass": 3,
+        "total": 12
+      },
+      "off_by_one": {
+        "pass": 6,
+        "total": 10
+      },
+      "ordering": {
+        "pass": 4,
+        "total": 8
+      },
+      "propagation": {
+        "pass": 6,
+        "total": 12
+      },
+      "state_management": {
+        "pass": 2,
+        "total": 8
+      },
+      "wrong_condition": {
+        "pass": 3,
+        "total": 10
+      }
+    },
+    "by_difficulty": {
+      "hard": {
+        "pass": 18,
+        "total": 52
+      },
+      "medium": {
+        "pass": 8,
+        "total": 20
+      }
+    },
+    "by_suite": {
+      "v1": {
+        "pass": 26,
+        "total": 72
+      }
+    },
+    "by_repo": {
+      "click": {
+        "pass": 9,
+        "total": 18
+      },
+      "jinja": {
+        "pass": 6,
+        "total": 18
+      },
+      "rich": {
+        "pass": 4,
+        "total": 18
+      },
+      "sqlparse": {
+        "pass": 7,
+        "total": 18
+      }
+    },
+    "by_report_level": {
+      "public_api": {
+        "pass": 17,
+        "total": 48
+      },
+      "symptom_only": {
+        "pass": 9,
+        "total": 24
+      }
+    },
+    "by_hidden_only": {
+      "False": {
+        "pass": 9,
+        "total": 22
+      },
+      "True": {
+        "pass": 17,
+        "total": 50
+      }
+    },
+    "by_cross_module": {
+      "False": {
+        "pass": 10,
+        "total": 16
+      },
+      "True": {
+        "pass": 16,
+        "total": 56
+      }
+    },
+    "by_shape": {
+      "cross_file": {
+        "pass": 3,
+        "total": 10
+      },
+      "multi_line": {
+        "pass": 5,
+        "total": 12
+      },
+      "multi_site": {
+        "pass": 7,
+        "total": 12
+      },
+      "single_line": {
+        "pass": 11,
+        "total": 38
+      }
+    }
+  },
+  "stopped_early": null,
+  "archived_from": "results/baseline-20260928-035556-5905"
+}
