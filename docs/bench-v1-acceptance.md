@@ -126,34 +126,42 @@ uv run python scripts/memorization_probe.py --models claude-haiku-4-5-20251001 c
 uv run python scripts/archive_run.py results/<probe dir> memorization-v1
 ```
 
-| | expected | measured (run 1, `memorization-20260926-130404-fbd6`) |
+| | expected | measured (run 2, `memorization-20260927-110408-8f9b`, archived as `memorization-v1`) |
 |---|---|---|
-| recalled share (similarity ≥ 0.9), v0 vs v1-new, per model | v0 higher than v1-new for every model | ✓ Haiku 5 / 14 = 36 % vs 0 / 45 = 0 %; Sonnet 8 / 14 = 57 % vs 19 / 45 = 42 %; luna 7 / 14 = 50 % vs 3 / 45 = 7 % |
-| real tasks: `ratio_fixed` by models released after the fix | reported per task, no expectation | Sonnet reproduces the *fixed* code of sqlparse_009 (`match` 1.00, `TypedLiteral` 0.98; 0.76 / 0.84 against the buggy base) and of jinja_009's `dump_stores` (1.00 vs 0.98 — the fix is one `sorted`); click_009 0.81 and rich_009 0.59 either way. Haiku and luna recall none of the six fixed symbols |
-| arm-D success conditioned on recall (join with §2's D per task) | the measurement; no expectation | luna, 50 tasks: with a recalled gold symbol D passes 4 / 9, without 4 / 41. Its 9 recalls are 7 v0 tasks + jinja_001 and jinja_007 (both fail in D); the two v1-new D passes (click_004, rich_003) are not recalled |
+| recalled share (similarity ≥ 0.9), v0 vs v1-new, per model | v0 higher than v1-new for every model | ✓ Haiku 2 / 14 = 14 % vs 0 / 45 = 0 %; Sonnet 7 / 14 = 50 % vs 18 / 45 = 40 %; luna 4 / 14 = 29 % vs 4 / 45 = 9 % |
+| real tasks: `ratio_fixed` by models released after the fix | reported per task, no expectation | Sonnet: sqlparse_009 is the one clear case — `TypedLiteral` 0.98 against the fixed tree vs 0.84 against the buggy base, `match` 0.73 vs 0.56; jinja_009's `dump_stores` 1.00 vs 0.98, rich_009 0.90 vs 0.89 and click_009 0.84 vs 0.83 are tiny patches where the two references barely differ. Haiku and luna: none of the six fixed symbols |
+| arm-D success conditioned on recall (join with §2's D per task) | the measurement; no expectation | luna, 50 tasks: with a recalled gold symbol D passes 2 / 8, without 6 / 42 (run 1: 4 / 9 vs 4 / 41) — too few recalled tasks for a rate; what is stable is where both live: 5 of luna's 8 recalls and 6 of its 8 D passes are v0 tasks, and the two v1-new D passes (click_004, rich_003) are not recalled by any model |
 
 59 of the 60 gold symbols probed (rich_008's `traverse._traverse` is 252
-lines, above the 200-line cap), three models, cost $0.89 (Sonnet $0.66),
-35 min. Median similarity: Haiku 0.64 (v0) / 0.31 (v1-new), Sonnet 0.97 /
-0.85, luna 0.48 / 0.38. By repository (Sonnet, the only model with recall on
-v1-new): toolz 4 / 4, tenacity 3 / 5, jinja 7 / 13, click 5 / 10, sqlparse
-5 / 13, rich 2 / 9, cachetools 1 / 5 — the 2020 base of sqlparse_009 and the
-2021 base of jinja_009 are among the best-known code in the set.
+lines, above the 200-line cap), three models, $0.92, 42 min. Median
+similarity: Haiku 0.46 (v0) / 0.30 (v1-new), Sonnet 0.90 / 0.85, luna 0.65 /
+0.42. By repository (Sonnet, the only model with recall on v1-new): toolz
+4 / 4, sqlparse 7 / 13, jinja 6 / 13, click 4 / 10, tenacity 2 / 5, rich
+1 / 9, cachetools 1 / 5.
 
-Reading. The pre-registered direction holds for all three models: the v0
-libraries are the memorized ones; on v1-new Haiku and luna recall almost
-nothing (0 and 3 symbols of 45), and their arm-D results are consistent with
-that — a memorized symbol makes the fault findable without a report (D 4 / 9
-with recall, 4 / 41 without), and v1-new has taken that route away from the
-cheap models. Sonnet is the exception to keep in view: it recalls 42 % of the
-v1-new gold symbols verbatim, and for sqlparse_009 it recalls the *fixed*
-version, so on that task a Sonnet agent can reproduce the fix from memory;
-Sonnet's v1-new success will be reported with the recalled tasks marked, and
-sqlparse_009's result under Sonnet is not evidence of debugging. Two
-measurement notes: rich_004's row in run 1 names `Console.render`, not the
-gold `markup.render` — the probe resolved a bare name to the wrong file
-(issue #16, fixed; the run is repeated so the archived numbers are clean),
-and nested gold functions above the line cap stay outside the measurement.
+Replication: run 1 (`memorization-20260926-130404-fbd6`, 35 min, $0.89,
+archived as `memorization-v1-run1`) was made before issue #16 was fixed, so
+its rich_004 row measures `Console.render` instead of the gold
+`markup.render`; everything else is the same protocol. Across the two runs
+the recalled counts move by a few symbols per model — Haiku 5 → 2, Sonnet
+27 → 25 (5 symbols out, 3 in), luna 10 → 8 — because the 0.9 threshold cuts
+through a band of near-verbatim replies (toolz's `unique` is 0.84 in one run
+and 1.00 in the other). The per-model ordering and the v0 > v1-new direction
+are identical in both runs; single-run counts should be read with a ± 3
+margin.
+
+Reading. The pre-registered direction holds for all three models in both
+runs: the v0 libraries are the memorized ones; on v1-new Haiku recalls
+nothing and luna 4 symbols of 45, and their arm-D results sit with that —
+the cheap models cannot find a v1-new fault from memory. Sonnet is the
+exception to keep in view: it reproduces 40 % of the v1-new gold symbols
+near-verbatim (sqlparse and jinja above all), and for sqlparse_009 it
+reproduces the *fixed* code more faithfully than the buggy base, so on that
+task a Sonnet agent can write the fix from memory; Sonnet's v1-new success
+will be reported with the recalled tasks marked, and sqlparse_009 under
+Sonnet is not evidence of debugging. Nested gold functions above the line
+cap stay outside the measurement, and one Sonnet reply in run 2 (rich_004)
+came back empty and scores 0.
 
 ## 4. Offline retrieval (design §9.4; no model, first rich index 3–5 min)
 

@@ -482,7 +482,9 @@ def test_anthropic_request_keys_exist_on_the_installed_sdk() -> None:
     anthropic = pytest.importorskip("anthropic")
     import inspect
 
-    accepted = set(inspect.signature(anthropic.resources.messages.Messages.create).parameters)
+    # The bound method the client calls, on a real SDK client (no network).
+    create = anthropic.Anthropic(api_key="test-key").messages.create
+    accepted = set(inspect.signature(create).parameters)
     client = AnthropicClient("claude-sonnet-5", sdk_client=FakeAnthropicSDK(anthropic_response()))
     request = client.build_request(
         CONVERSATION, tools=TOOLS, max_tokens=512, temperature=0.0, tool_choice="none"
@@ -494,7 +496,10 @@ def test_openai_request_keys_exist_on_the_installed_sdk() -> None:
     openai = pytest.importorskip("openai")
     import inspect
 
-    accepted = set(inspect.signature(openai.resources.responses.Responses.create).parameters)
+    # `openai.resources` is a lazy proxy without a `responses` attribute; the
+    # client's own `responses.create` is what our code calls.
+    create = openai.OpenAI(api_key="test-key").responses.create
+    accepted = set(inspect.signature(create).parameters)
     client = OpenAIClient("gpt-5.6-terra", sdk_client=FakeOpenAISDK(None), reasoning_effort="low")
     request = client.build_request(
         CONVERSATION, tools=TOOLS, max_tokens=256, temperature=1.0, tool_choice="none"

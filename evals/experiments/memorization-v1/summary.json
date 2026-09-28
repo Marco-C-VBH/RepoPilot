@@ -1,0 +1,282 @@
+{
+  "kind": "memorization",
+  "recalled_at": 0.9,
+  "partial_at": 0.6,
+  "by_model": {
+    "claude-haiku-4-5-20251001": {
+      "all": {
+        "symbols": 59,
+        "recalled": 2,
+        "partial": 7,
+        "exact": 1,
+        "recalled_rate": 0.0339,
+        "ratio_median": 0.3602
+      },
+      "v0": {
+        "symbols": 14,
+        "recalled": 2,
+        "partial": 2,
+        "exact": 1,
+        "recalled_rate": 0.1429,
+        "ratio_median": 0.4599
+      },
+      "v1": {
+        "symbols": 45,
+        "recalled": 0,
+        "partial": 5,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.3004
+      },
+      "cachetools": {
+        "symbols": 5,
+        "recalled": 0,
+        "partial": 1,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.4868
+      },
+      "click": {
+        "symbols": 10,
+        "recalled": 0,
+        "partial": 2,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.3429
+      },
+      "jinja": {
+        "symbols": 13,
+        "recalled": 0,
+        "partial": 3,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.5172
+      },
+      "rich": {
+        "symbols": 9,
+        "recalled": 0,
+        "partial": 0,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.2743
+      },
+      "sqlparse": {
+        "symbols": 13,
+        "recalled": 0,
+        "partial": 0,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.2532
+      },
+      "tenacity": {
+        "symbols": 5,
+        "recalled": 2,
+        "partial": 0,
+        "exact": 1,
+        "recalled_rate": 0.4,
+        "ratio_median": 0.433
+      },
+      "toolz": {
+        "symbols": 4,
+        "recalled": 0,
+        "partial": 1,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.4387
+      },
+      "real_fixed": {
+        "symbols": 6,
+        "recalled_fixed": 0,
+        "ratio_fixed_median": 0.2592
+      },
+      "cost_usd": 0.0664
+    },
+    "claude-sonnet-5": {
+      "all": {
+        "symbols": 59,
+        "recalled": 25,
+        "partial": 20,
+        "exact": 10,
+        "recalled_rate": 0.4237,
+        "ratio_median": 0.8481
+      },
+      "v0": {
+        "symbols": 14,
+        "recalled": 7,
+        "partial": 3,
+        "exact": 4,
+        "recalled_rate": 0.5,
+        "ratio_median": 0.8966
+      },
+      "v1": {
+        "symbols": 45,
+        "recalled": 18,
+        "partial": 17,
+        "exact": 6,
+        "recalled_rate": 0.4,
+        "ratio_median": 0.8481
+      },
+      "cachetools": {
+        "symbols": 5,
+        "recalled": 1,
+        "partial": 2,
+        "exact": 0,
+        "recalled_rate": 0.2,
+        "ratio_median": 0.7725
+      },
+      "click": {
+        "symbols": 10,
+        "recalled": 4,
+        "partial": 5,
+        "exact": 1,
+        "recalled_rate": 0.4,
+        "ratio_median": 0.8298
+      },
+      "jinja": {
+        "symbols": 13,
+        "recalled": 6,
+        "partial": 6,
+        "exact": 0,
+        "recalled_rate": 0.4615,
+        "ratio_median": 0.8765
+      },
+      "rich": {
+        "symbols": 9,
+        "recalled": 1,
+        "partial": 3,
+        "exact": 0,
+        "recalled_rate": 0.1111,
+        "ratio_median": 0.5732
+      },
+      "sqlparse": {
+        "symbols": 13,
+        "recalled": 7,
+        "partial": 3,
+        "exact": 5,
+        "recalled_rate": 0.5385,
+        "ratio_median": 0.9369
+      },
+      "tenacity": {
+        "symbols": 5,
+        "recalled": 2,
+        "partial": 1,
+        "exact": 2,
+        "recalled_rate": 0.4,
+        "ratio_median": 0.8172
+      },
+      "toolz": {
+        "symbols": 4,
+        "recalled": 4,
+        "partial": 0,
+        "exact": 2,
+        "recalled_rate": 1.0,
+        "ratio_median": 0.9949
+      },
+      "real_fixed": {
+        "symbols": 6,
+        "recalled_fixed": 3,
+        "ratio_fixed_median": 0.8729
+      },
+      "cost_usd": 0.6956
+    },
+    "gpt-5.6-luna": {
+      "all": {
+        "symbols": 59,
+        "recalled": 8,
+        "partial": 14,
+        "exact": 4,
+        "recalled_rate": 0.1356,
+        "ratio_median": 0.5126
+      },
+      "v0": {
+        "symbols": 14,
+        "recalled": 4,
+        "partial": 5,
+        "exact": 2,
+        "recalled_rate": 0.2857,
+        "ratio_median": 0.6506
+      },
+      "v1": {
+        "symbols": 45,
+        "recalled": 4,
+        "partial": 9,
+        "exact": 2,
+        "recalled_rate": 0.0889,
+        "ratio_median": 0.4198
+      },
+      "cachetools": {
+        "symbols": 5,
+        "recalled": 1,
+        "partial": 4,
+        "exact": 0,
+        "recalled_rate": 0.2,
+        "ratio_median": 0.7222
+      },
+      "click": {
+        "symbols": 10,
+        "recalled": 0,
+        "partial": 3,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.4869
+      },
+      "jinja": {
+        "symbols": 13,
+        "recalled": 3,
+        "partial": 5,
+        "exact": 1,
+        "recalled_rate": 0.2308,
+        "ratio_median": 0.6588
+      },
+      "rich": {
+        "symbols": 9,
+        "recalled": 0,
+        "partial": 0,
+        "exact": 0,
+        "recalled_rate": 0.0,
+        "ratio_median": 0.3522
+      },
+      "sqlparse": {
+        "symbols": 13,
+        "recalled": 1,
+        "partial": 1,
+        "exact": 1,
+        "recalled_rate": 0.0769,
+        "ratio_median": 0.3727
+      },
+      "tenacity": {
+        "symbols": 5,
+        "recalled": 2,
+        "partial": 1,
+        "exact": 2,
+        "recalled_rate": 0.4,
+        "ratio_median": 0.6038
+      },
+      "toolz": {
+        "symbols": 4,
+        "recalled": 1,
+        "partial": 0,
+        "exact": 0,
+        "recalled_rate": 0.25,
+        "ratio_median": 0.4862
+      },
+      "real_fixed": {
+        "symbols": 6,
+        "recalled_fixed": 0,
+        "ratio_fixed_median": 0.2765
+      },
+      "cost_usd": 0.1542
+    }
+  },
+  "tasks": 50,
+  "models": [
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-5",
+    "gpt-5.6-luna"
+  ],
+  "started_at": "2026-09-27T15:04:08+00:00",
+  "duration_seconds": 2514.1,
+  "cost_total_usd": 0.9162,
+  "stopped_early": null,
+  "archived_from": "results/memorization-20260927-110408-8f9b"
+}
