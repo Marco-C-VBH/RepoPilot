@@ -1,29 +1,21 @@
 # RepoPilot
 
-An evaluation-driven repository debugging agent for Python projects. Given a Git
-repository and a bug report, RepoPilot searches the codebase, inspects the relevant
-code, proposes a patch, validates it with pytest inside an isolated Docker sandbox,
-and iterates on failures under a fixed step / token / cost / runtime budget — while
-recording a structured trace of everything it did.
+[![ci](https://github.com/Marco-C-VBH/RepoPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Marco-C-VBH/RepoPilot/actions/workflows/ci.yml)
+Python 3.11+ · MIT
+
+An evaluation-driven repository debugging agent for Python. Given a Git
+repository and a bug report, RepoPilot searches the codebase, reads the
+relevant code, writes a patch, validates it with pytest inside an isolated
+Docker sandbox, and iterates on failures under a fixed step / token / cost /
+runtime budget — recording a structured trace of everything it did.
 
 The point is not the LLM call. The point is measurement: task success on a
-deterministic benchmark, retrieval recall, cost, latency, and a failure taxonomy,
-with every added feature justified by an ablation.
+deterministic benchmark, retrieval recall, cost, latency, and a failure
+taxonomy, with every feature justified by a pre-registered experiment and
+every number below traceable to an archived run in `evals/experiments/`.
+Where an expectation missed, the miss is reported next to it.
 
-**Status: Phase 0 (evaluation harness), Phase 1 (baseline agent), Phase 2
-(structured runtime, tolerant edits, context compaction) and Phase 3
-(retrieval: ast chunks, BM25 + local embeddings + symbols, RRF) — done and
-measured on Bench v0. Bench v1 — 50 tasks on seven repositories, reports
-audited by tier, hidden-only and cross-module by construction — designed
-and pre-registered (`docs/bench-v1-design.md`), built, accepted
-(`docs/bench-v1-acceptance.md`: oracles, leak ablation, memorization probe,
-offline retrieval) and measured on the agents (`docs/bench-v1-agents.md`:
-five arms, three models, pre-registered expectations and a failure
-taxonomy). Results below.** Every number here is measured by a run archived
-under `evals/experiments/`; nothing is a placeholder, and where a
-pre-registered expectation missed, the miss is reported next to it.
-
-## Results on RepoPilot-Bench v1
+## Results
 
 RepoPilot-Bench v1 is 50 reproducible debugging tasks on seven pinned
 Python repositories: the 14 tasks of v0 (cachetools, toolz, tenacity) plus
@@ -32,14 +24,14 @@ eight controlled mutations and one historical fix per repository, every bug
 report audited so that it never names the changed symbol or file, 25 of the
 36 caught only by a hidden test, 28 with the symptom in a different module
 than the cause ([the benchmark](#repopilot-bench-v1)). Every configuration
-runs under the spec §9.1 budget (30 steps, 40 tool calls, 5 test runs, 100k
-tokens, $0.50, 600 s per task). All numbers are from runs of 2026-09-26/28
-archived under `evals/experiments/` (the directory named in the last column).
+runs under the same budget (30 steps, 40 tool calls, 5 test runs, 100k
+tokens, $0.50, 600 s per task). Runs of 2026-09-26/28; the archive is named
+in the last column.
 
 | | | archive |
 | --- | --- | --- |
 | Benchmark | 50 tasks, 7 repositories, 46 mutations + 4 historical fixes; null solver 0 / 50, reference fixes 100 / 100 over two repeats | `bench-v1-null`, `bench-v1-gold-x2` |
-| Task success, 36 new tasks | `claude-sonnet-5` baseline **86.1 %** · `gpt-5.6-luna` baseline **86.1 %** · `claude-haiku-4-5` structured runtime **70.8 %** · `claude-haiku-4-5` baseline **36.1 %** | table below |
+| Task success, 36 new tasks | `claude-sonnet-5` baseline **86.1 %** · `gpt-5.6-luna` baseline **86.1 %** · `claude-haiku-4-5` structured runtime **70.8 %** · `claude-haiku-4-5` baseline **36.1 %** | [five arms](#the-five-arms-on-the-36-new-tasks) |
 | Structured runtime, same model, same 100k budget | Haiku **36.1 % → 70.8 %** (+34.7 pp, 2 × 36 runs each), tokens per task 106.5k → 64.4k (**−40 %**), cost $0.114 → $0.076, runs ended by the budget 97 % → 33 % | `baseline-v1-haiku45-x2`, `structured-v1-compact-none-haiku45-x2` |
 | Retrieval Recall@10 (file), 36 new tasks | **0.86** (BM25 + dense, MRR 0.57; v0: 0.93 / 0.86); the symbol channel falls from 0.93 on v0 to 0.22, because the reports no longer name symbols | `retrieval-v1` |
 | Retrieval evidence injected at PLAN | **no success gain**: 68.1 % vs 70.8 % (a tie), −11 % steps, −17 % tool calls, +15 % tokens — a negative result, mechanism below | `structured-v1-compact-evidence-haiku45-x2` |
@@ -47,11 +39,141 @@ archived under `evals/experiments/` (the directory named in the last column).
 | Median cost / task | $0.076 (Haiku, structured) · $0.119 (Sonnet, baseline) · $0.004 (luna, baseline) | |
 | Median solve time / task | 40 s (Haiku, structured) · 28 s (Sonnet, baseline) · 23 s (luna, baseline) | |
 
+Contents: [How it works](#how-it-works) · [Five findings](#five-findings) ·
+[Results on Bench v1](#results-on-repopilot-bench-v1) ·
+[The benchmark](#repopilot-bench-v1) · [Quick start](#quick-start) ·
+[Design notes](#design-notes) · [Layout](#layout) · [License](#license) ·
+the v0 chapter (Phases 1–3) in [`docs/results-v0.md`](docs/results-v0.md).
+
+## How it works
+
+```mermaid
+flowchart LR
+    task["Task<br/>repository @ commit + bug report"]
+    ws["Workspace<br/>host-side git checkout of the buggy tree"]
+    idx["Retrieval index<br/>ast chunks · BM25 · dense · symbols<br/>reciprocal-rank fusion"]
+    rt["Structured runtime<br/>state machine · budgets · loop detection<br/>compact context"]
+    llm["Model<br/>Claude or GPT through one thin client"]
+    sb["Docker sandbox<br/>fresh container, no network<br/>pytest with per-test outcomes"]
+    judge["Judge<br/>fresh container + hidden tests<br/>fail_to_pass and pass_to_pass"]
+    out["Trace + metrics<br/>every call, cost and phase<br/>success · taxonomy · Recall@k"]
+    task --> ws
+    ws --> idx
+    idx -. "evidence at PLAN" .-> rt
+    rt <--> llm
+    rt -- "search_code · search_symbol · find_references · read_file · edit_file" --> ws
+    rt -- "run_tests" --> sb
+    ws -- "candidate patch" --> judge
+    rt --> out
+    judge --> out
+```
+
+The agent works on a host-side git checkout through six typed tools —
+`search_code`, `search_symbol`, `find_references`, `read_file`, `edit_file`,
+`run_tests` — and only `run_tests` touches the sandbox: the workspace diff
+is applied to a fresh copy of the tree in a container with no network and
+pytest runs there. The final diff is the candidate patch, judged in another
+fresh container with the task's hidden tests applied; any edit to a test
+file is stripped before judging. Every model call and tool call, with
+tokens, latency, cost, arguments and result, goes to a JSONL trace, and
+`summary.json` turns a run into success, cost and latency metrics, a
+failure taxonomy and breakdowns by task property.
+
+### The runtime state machine
+
+`--solver structured` runs the same tools, workspace, sandbox, budget and
+model through a state machine that owns control; `--solver baseline` is the
+plain tool-calling loop it is measured against.
+
+```mermaid
+stateDiagram-v2
+    [*] --> INITIALIZE
+    INITIALIZE --> PLAN : runtime runs the tests once
+    PLAN --> LOCALIZE : plan + suspects
+    LOCALIZE --> PATCH : hypothesis
+    PATCH --> TEST : diff changed
+    TEST --> DONE : green
+    TEST --> FINALIZE : green, but the suite was green at the start
+    TEST --> ANALYZE : still failing or newly failing
+    ANALYZE --> PATCH : next = patch
+    ANALYZE --> LOCALIZE : next = localize
+    FINALIZE --> DONE : done
+    FINALIZE --> PATCH : continue, once
+    DONE --> [*]
+```
+
+INITIALIZE and TEST belong to the runtime, the other phases to the model.
+INITIALIZE runs the task's test command once, before any change, so the
+initial failures are known; PLAN, ANALYZE and FINALIZE are single JSON
+calls without tools; LOCALIZE may search and read (10 calls per visit,
+then the runtime asks for the hypothesis — a reply without tool calls);
+PATCH may also edit (4 edits per visit) and never runs tests — a patching
+turn that ends with a changed diff hands over to TEST, which runs the full
+command and classifies every test as fixed, still failing or newly
+failing; ANALYZE decides where to go next and whether to keep the patch
+(`keep_patch = false` resets the tree); FINALIZE exists for hidden-only
+tasks, whose visible suite is green from the start. What the runtime does
+that the baseline leaves to the model: it reproduces before planning,
+verifies after every patching turn, and ends the run on a green full-suite
+run — no exploring after success; it refuses tools outside the phase; it
+refuses the third identical tool call the model can still see (same
+arguments, same workspace version) with a replanning notice and ends the
+run as `agent_loop` if the call comes back with that notice in view; it
+nudges once when a patching turn ends without an edit and ends the run as
+`no_progress` on the second; it reverts the workspace when ANALYZE says so.
+`max_test_runs = 5` means one reproduction plus at most four patch → test
+rounds. With `--context compact` every model call is rebuilt from the
+runtime's working state (plan, hypotheses, files read as line ranges, the
+current diff, the latest test run, budget left) plus the last three tool
+steps verbatim, instead of replaying the whole history; nothing is
+summarised by a model. Every run records the phase transitions, the plan,
+the hypotheses and their fate, each test run's fixed / still-failing /
+newly-failing sets and the intervention counters (`agent.runtime` in
+`results.jsonl`; `phase`, `decision`, `test_run`, `intervention` and
+`state` events in the trace). Design and pre-registered expectations:
+`docs/runtime-design.md`.
+
+## Five findings
+
+1. **Bench v1 measures debugging, not recall.** Without the bug report the
+   same agent falls from 86.1 % to 5.6 % on the 36 new tasks (on v0 it kept
+   42.9 %: the repository itself gave those bugs away); redacting the
+   report's identifiers costs 5.5 points; and a memorization probe shows
+   that Sonnet's ability to write 18 of the 45 gold functions from memory
+   does not carry its score (13 / 16 on the tasks it can recite, 18 / 20 on
+   the rest). `leak-v1-*`, `memorization-v1`.
+2. **Under a fixed 100k-token budget the structured runtime turns Haiku's
+   36 % into 71 % at 60 % of the tokens — and the qualifier is the finding.**
+   The baseline re-sends its whole transcript on every call and reaches the
+   cap before making an edit in 40 of 72 runs; the same model with
+   compaction, runtime-owned tests and loop control solves twice the tasks.
+   Sonnet needs nine steps per task, fits inside the cap unaided, and
+   reaches 86 % as a baseline.
+3. **Runtime-injected retrieval evidence is a negative result at the task
+   level, on v0 and on v1.** Offline Recall@10 is 0.86, but the five chunks
+   injected at PLAN held a gold file for 23 of 36 tasks, the agent follows
+   them whether or not they are right, and the misses cost exactly the
+   deficit (steps −11 %, tokens +15 %, success a tie). Evidence that is
+   trusted needs precision more than recall.
+4. **Context compaction pays for the model that needs it, and tokens are
+   the wrong metric when a provider caches.** On v0, Haiku's tokens fell
+   62 % and its cost 58 % at equal success; Sonnet's runs are too short to
+   compact; luna's tokens fell 17 % while its cost rose 64 %, because a
+   prompt rebuilt every step forfeits OpenAI's automatic prefix cache
+   ([`docs/results-v0.md`](docs/results-v0.md)).
+5. **What fails now is the cap, not localization.** 79 of the 100 failed v1
+   runs had reached the right file and ran out of tokens there; 8 never
+   found it. Two long-file, two-site tasks (`rich_006`, `jinja_008`) are
+   unsolved by every configuration. The next lever is context handling
+   under the budget; retrieval is not on the list.
+
+## Results on RepoPilot-Bench v1
+
 ### The five arms on the 36 new tasks
 
 Same tasks, same budget, same tools, same sandbox; the structured runtime
-is the Phase 2 state machine with the compact context (K = 3) and, in the
-`evidence` arm, the Phase 3 retrieval pushing the report's top five chunks
+is the state machine above with the compact context (K = 3) and, in the
+`evidence` arm, the retrieval index pushing the report's top five chunks
 (all three channels, RRF) in front of the model until its first edit.
 
 | model | arm | runs | success | steps | tool calls | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | first edit in a gold file | archive |
@@ -198,576 +320,6 @@ The agent runs in the table cost $25.5 in total, the acceptance runs (leak
 ablation, memorization probe) $2.0; the oracles and the offline retrieval
 evaluation use no model.
 
-## Results on RepoPilot-Bench v0 (Phases 1–3)
-
-The sections below are the history behind the v1 numbers: each phase was
-measured on v0 first, with its expectations written down beforehand, and
-the v0 saturation those runs revealed is what Bench v1 was built to remove.
-
-The baseline agent (a plain tool-calling loop, no runtime controls, no
-retrieval beyond grep and an `ast` symbol table) on RepoPilot-Bench v0 (14
-controlled-mutation tasks), every configuration under the spec §9.1 budget
-(30 steps, 40 tool calls, 5 test runs, 100k tokens, $0.50, 600 s per task):
-
-| model | runs | success | steps | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | invalid tool calls |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `claude-sonnet-5` | 3 × 14 | **42 / 42** | 5.9 | 18.7k | $0.045 | 15 s | 0 | 1.4% |
-| `gpt-5.6-luna` | 1 × 14 | **14 / 14** | 7.7 | 33.7k | $0.003 | 18 s | 0 | 8.3% |
-| `claude-haiku-4-5` | 1 × 14 | **11 / 14** | 14.3 | 90.8k | $0.105 | 27 s | 6 / 14 | 0.0% |
-
-Runs of 2026-09-14, archived under `evals/experiments/baseline-v0-*/`. Sonnet's
-three runs (one single, one `--repeat 2`) gave identical verdicts on every task;
-trajectories vary (7 / 10 / 8 steps on `cachetools_001`).
-
-Two findings, both about what v0 can and cannot measure:
-
-1. **Success rate on v0 is saturated for capable models.** The tasks are
-   single-site mutations in small libraries, and even the "hard" bug reports
-   carry the name of the class or decorator involved, so `search_symbol` on a
-   name from the report lands on the right function in one call (Sonnet: 12 / 14
-   runs opened that way, the two hidden-only tasks passed without the agent ever
-   seeing a failing test). A benchmark the baseline completes cannot show what
-   hybrid retrieval adds; that needs **Bench v1** (reports audited for leaked
-   identifiers, larger repositories, symptoms in a different module than the
-   cause, more hidden-only tasks).
-2. **Efficiency under a fixed budget is not saturated, and the weaker model shows
-   where a runtime would help.** Haiku spent 5× Sonnet's tokens per task (5.4
-   file reads per task vs 1.5; it re-reads test files and keeps searching after it
-   has the answer), hit the 100k-token cap in 6 of 14 runs, and all three of its
-   failures were *analysis without an edit* — `tenacity_004`'s trace ends with the
-   correct diagnosis written out and no `edit_file` call. Three of its passes
-   also ended on the cap after the tests were already green. Luna's only errors
-   were 12 calls to `edit_file` with an invented argument name (`replacement`),
-   one per task, each repaired on the next step. Explicit termination on green
-   tests, repeat detection and tool-argument validation (spec §5, Phase 2) have
-   measurable targets on v0 today: budget terminations, wasted steps after
-   success, invalid-call rate, tokens per task.
-
-Details in [Phase 1 findings](#phase-1-findings).
-
-### Structured runtime vs. baseline (Phase 2, spec §12.2 and §12.3)
-
-Same 14 tasks, same budget, same models, same tools; the runtime owns
-reproduction, verification, termination, phase tool sets and loop detection
-(details in [The structured runtime](#the-structured-runtime-phase-2a)), and
-its `compact` context rebuilds every prompt from the runtime's working state
-plus the last three tool steps instead of replaying the whole history
-([2b](#phase-2a-findings)):
-
-| model | arm | success | steps | tool calls | test runs | tokens / task (median) | cost / task (median) | time (p50) | ended by budget | verified on a green run | invalid calls | repeatable verdicts |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `claude-haiku-4-5` | baseline (2 × 14) | 26 / 28 | 14.4 | 13.9 | 3.2 | 101.6k | $0.111 | 27 s | 13 / 28 | – | 0.0% | no (2 tasks flip) |
-| | **structured, full history** (3 × 14) | **40 / 42** | 11.2 | 8.4 | 2.1 | 57.6k | $0.066 | 22 s | 4 / 42 | 90.5% | 0.3% | no (1 task flips) |
-| | **structured, compact context** (3 × 14) | **40 / 42** | **10.9** | 8.5 | 2.2 | **38.4k** | **$0.047** | 24 s | **2 / 42** | **95.2%** | 1.7% | no (2 tasks flip) |
-| `gpt-5.6-luna` (1 × 14) | baseline | 14 / 14 | 7.7 | 10.3 | 2.1 | 33.7k | $0.003 | 18 s | 0 | – | 8.3% | – |
-| | structured, full history | 14 / 14 | 8.1 | 9.2 | 2.1 | 39.0k | $0.0045 (64% of input served from OpenAI's prompt cache) | 20 s | 0 | 100% | 10.9% | – |
-| | structured, compact context | 14 / 14 | 8.3 | 10.4 | 2.1 | 32.5k | $0.0074 (0% cached) | 20 s | 0 | 100% | 8.9% | – |
-| `claude-sonnet-5` (1 × 14; baseline 3 × 14) | baseline | 42 / 42 | 5.9 | ≈5 | 1.1 | 18.7k | $0.045 | 15 s | 0 | – | 1.4% | yes |
-| | structured, full history | 14 / 14 | 6.9 | 3.9 | 2.0 | 22.4k | $0.053 | 16 s | 0 | 100% | 0.0% | – |
-| | structured, compact context | 14 / 14 | 6.9 | 3.9 | 2.0 | 23.2k | $0.054 | 23 s | 0 | 100% | 0.0% | – |
-
-Haiku rows: `evals/experiments/baseline-2a1-haiku45-x2/`,
-`structured-final-full-haiku45-x3/` and `structured-final-compact-haiku45-x3/`
-— the two structured arms are one experiment on the final code, run back to
-back (2026-09-18, pre-registered in `docs/runtime-design.md` §9); the
-baseline is the earlier 2 × 14 run, its code unchanged since. Luna and Sonnet
-rows: `baseline-v0-*`, `structured-v0-*` (full history, 2026-09-15, the tool
-version before 2a.1) and `structured-2b-luna` / `structured-2b-sonnet5`
-(compact, 2026-09-18).
-
-What the table says. The runtime does not raise Haiku's success rate on v0 —
-26 / 28 baseline, 40 / 42 in both structured arms, all within one task of
-each other — but it changes how Haiku gets there: about 40% fewer tokens and
-cost per task with the full history (−43% / −41%), a fifth of the budget
-terminations, fewer steps, tool calls and test runs. Compaction then takes
-another third off:
-38.4k tokens and $0.047 per task, a 62% / 58% cut against the baseline, at the
-same success, the same steps and more runs ending on a verified green suite
-(95% vs. 90%), because the runs that used to hit the 100k cap now finish.
-Its costs are visible too: 17 re-reads of code that had left the window in
-42 runs, more interventions (10 forced hypotheses, 4 nudges against 6 and 0),
-and 1.7% invalid calls — Haiku copying the state's "lines 418-450" notation
-into `read_file(start="[418, 450]")`. No arm is deterministic at three
-repeats: `cachetools_003` (a patch that fixes the two failing tests and breaks
-a third; the model then re-reads `__touch` and the test until the cap) passes
-1 of 3 full runs and 2 of 3 compact runs, and one compact run of
-`cachetools_001` went after the wrong method first and ran out of budget
-re-localising. The capable models pay for the structure: one extra step
-(PLAN) and +19% (Sonnet) / +55% (luna, on $0.003) cost per task with the full
-history.
-
-Compaction on the capable models is the negative result of Phase 2, and it
-has two different causes. Sonnet finishes in 6.9 steps, and a run that short
-never grows past the window: its prompts are the same size under either
-context (3.2k tokens per call, median), so tokens and cost are unchanged
-(+3%, flat) — compaction only pays once the history is longer than the state
-plus three steps, which on v0 is Haiku's problem, not Sonnet's. Luna's
-prompts *did* shrink (4.9k → 2.5k per call, −17% tokens per task) and the task
-still cost 64% more, because OpenAI caches prompt prefixes automatically and
-bills cache hits at a tenth: with the full history 64% of luna's input tokens
-were cache reads; a state that is rebuilt every step has no stable prefix,
-so the compact arm cached nothing. (Anthropic caches only on request; no
-Claude run here used it, so the Haiku and Sonnet comparisons are between two
-uncached arms.) Tokens per task, the metric the design was aimed at, would
-have called luna a win; cost per task says the opposite, and cost is the
-metric that matters. Prompt caching on the full-history arm is therefore the
-next lever to measure, not a footnote. The traces behind each number are in
-[Phase 2a findings](#phase-2a-findings).
-
-## Setup
-
-```bash
-uv sync                                   # creates .venv and installs dev tools
-uv sync --extra retrieval                 # + the local embedding model (fastembed; optional)
-uv run pytest                             # unit tests; Docker tests skip if no daemon
-uv run pytest -m docker                   # sandbox end-to-end tests (needs Docker running)
-uv run ruff check . && uv run ruff format --check .
-uv run python scripts/validate_tasks.py   # validate every task + the suite report (v1 targets)
-uv run python -m evals.runner --list      # tasks that a benchmark run would select
-```
-
-Docker (Docker Desktop, OrbStack or colima) is required for sandboxed test
-execution. The first `-m docker` run builds the base image (python:3.11-slim +
-git + pytest), which takes a minute or two; later runs reuse it.
-
-## Models and API keys
-
-The agent talks to models through one small interface
-(`repopilot/models/`): neutral `Message` / `ToolSpec` / `ModelResponse` types,
-an adapter per vendor (Anthropic Messages API, OpenAI Responses API), a
-`FakeClient` that plays scripted replies for tests, a price table, and a
-`Ledger` that turns every call into tokens, latency and an estimated cost and
-enforces the cost / token caps of the agent budget (spec §9.1). Two model roles
-follow the routing ablation (§12.4): a *strong* model for planning and patching
-and a *cheap* one for rewriting and summarizing.
-
-| role | default | override |
-| --- | --- | --- |
-| strong | `claude-sonnet-5` ($2 / $10 per MTok in / out) | `REPOPILOT_STRONG_MODEL` or a CLI flag |
-| cheap | `claude-haiku-4-5-20251001` ($1 / $5) | `REPOPILOT_CHEAP_MODEL` or a CLI flag |
-
-OpenAI counterparts (`gpt-5.6-terra` $2 / $12, `gpt-5.6-luna` $0.20 / $1.20)
-plug in by name; any model used must have an entry in
-`repopilot/models/pricing.py`, so a cost is never unknown. Costs are estimates
-from that table (dated inside the file), not from the vendors' billing pages,
-which makes them reproducible from a trace alone.
-
-Keys never appear in code, traces, logs or the sandbox (containers start with
-a clean environment and no network). They come from the environment only:
-
-```bash
-cp .env.example .env                       # git-ignored; fill in ANTHROPIC_API_KEY / OPENAI_API_KEY
-uv run python scripts/model_smoke.py       # one tiny text + tool-call round trip per model, ~$0.001
-uv run pytest -m llm                       # the same as tests; skipped automatically without keys
-```
-
-CLI entry points load `.env`; library code only reads `os.environ`, and error
-messages name the missing variable, never a value. CI runs with no keys and
-deselects `-m llm`; `tests/test_no_secrets.py` fails the build if a key prefix
-is ever committed. Use a dedicated key per provider with a spend limit set in
-the vendor console, and revoke it if it leaks.
-
-## Running the benchmark
-
-```bash
-uv run python -m evals.runner --solver null --expect fail            # untouched: all FAIL
-uv run python -m evals.runner --solver gold --expect pass --repeat 2 # reference fix: all PASS, twice
-uv run python -m evals.runner --solver gold --ids cachetools_001     # a subset
-```
-
-Every run writes `results/<solver>-<timestamp>-<id>/` with `results.jsonl` (one
-record per task and repeat: status, reason codes, per-test outcomes, timings),
-`summary.json` (counts, pass rate, determinism verdict) and `logs/<task>.log`
-(the candidate patch, the test output, the per-test verdict table). The two
-commands above are the harness's own acceptance test: a task that the null solver
-passes or the gold solver fails is mis-packaged, and a task whose outcome differs
-between repeats is flaky.
-
-A solver is anything with `solve(task, image) -> patch | None`; the harness always
-judges the returned patch in a fresh container, so a solver's own workspace can
-never influence the verdict. Any section of a candidate patch that touches a test
-file is stripped before judging and recorded (`patch_test_files`): the benchmark's
-own tests decide, so editing them can only hide a bug.
-
-## The baseline agent (Phase 1)
-
-`--solver baseline` runs `repopilot/agent/baseline.py`: a plain tool-calling loop
-— system prompt, bug report, then *model → tools → results* until the model
-stops or the budget is spent. No planning phase, no state machine, no loop
-detection, no context compaction: it is the unconstrained end of the
-architecture ablation (spec §12.2), and every later phase is measured against it.
-
-```bash
-uv run python -m evals.runner --solver baseline --ids cachetools_004 --max-run-cost 2   # one task
-uv run python -m evals.runner --solver baseline --max-run-cost 10                       # all tasks
-uv run python -m evals.runner --solver baseline --model gpt-5.6-terra --max-steps 20    # variations
-uv run python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10  # Phase 2a runtime
-uv run python -m evals.runner --solver structured --context compact --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # 2b
-uv run python -m evals.runner --solver structured --context compact --retrieval evidence --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # Phase 3
-uv run python -m evals.runner --solver baseline --suite v1-new --report redacted --no-run-tests    # Bench v1: --suite {v0,v1,v1-new}, leak-ablation arms
-uv run python scripts/retrieval_eval.py                # offline: Recall@k / MRR per retrieval configuration, no model
-```
-
-The agent works on a host-side git checkout of the buggy tree (`repopilot/tools/`)
-through six typed tools — `search_code`, `search_symbol`, `find_references`,
-`read_file`, `edit_file`, `run_tests` — and only `run_tests` touches the sandbox:
-the workspace diff is applied to a fresh copy of the tree in the container and
-pytest runs there. The final diff is the candidate patch. Every task runs under
-the same budget (spec §9.1: 30 model calls, 40 tool calls, 5 test runs, 100k
-tokens, $0.50, 600 s by default; `--max-*` flags change it for a whole run), and
-`--max-run-cost` caps the spend of the entire benchmark run.
-
-Each task leaves a trace (`results/<run>/traces/<task>.jsonl`, spec §13.1): the
-run's metadata, every model call with tokens / latency / cost, every tool call
-with arguments, duration, result and errors, the final patch, the budget state and
-the termination reason. `summary.json` adds an `agent` block (spec §11.1): success,
-patch and regression rates, steps / tool calls / test runs, invalid-tool-call
-rate, tokens, cost (median and total), solve latency p50 / p95, termination
-counts, success by category and difficulty — and a first-cut failure taxonomy
-(spec §11.2) derived from the verdict, the termination and whether the agent ever
-read or edited a gold file: `retrieval_failure` (localization: no gold file read
-or edited, whatever ended the run), `reasoning_failure`, `wrong_localization`,
-`incorrect_patch`, `regression_introduced`, `budget_exceeded` (a gold file was
-reached, the budget ran out), `test_misunderstanding`, `tool_failure`,
-`environment_failure`. The taxonomy is heuristic and exists to point at the
-highest-leverage problem, not to be ground truth. Since Bench v1 the block also
-carries the localization measures the leak audit computed by hand — first edit
-in a gold file, gold file read before the first edit — and success broken down
-by suite, repository, report tier, hidden-only, cross-module and fix shape.
-
-### Phase 1 findings
-
-What the 14 traces of the first run say (`evals/experiments/baseline-v0-sonnet5/traces/`):
-
-- **Localization is free on v0.** 12 of 14 runs opened with `search_symbol(<name
-  from the bug report>)`, the other two with a direct `read_file` / `search_code`
-  on a term from the report; the first file read was a gold file in 13 / 14
-  (`cachetools_005` read `__init__.py` first, then followed `cached` to the nested
-  `_wrapper` in `_cached.py`: 5 reads across 3 files, 10 steps). The difficulty
-  tiers only vary how much *behaviour* the report describes — the identifiers
-  leak the location regardless.
-- **Iteration barely happens.** 10 of 14 runs made exactly one edit and ran the
-  tests once; three more only ran a narrower target first or split the fix into
-  two edits. The one real correction loop was `cachetools_003`: the first edit
-  broke `test_missing_getsizeof`, the agent read `Cache.__getitem__` and fixed it
-  (11 steps, 2 test runs).
-- **Budgets never bind.** Median 18.7k total tokens and $0.045; the most expensive
-  run was 58.9k tokens / $0.13 (`cachetools_005`) and the slowest 36 s
-  (`cachetools_003`), against caps of 100k / $0.50 / 600 s. 87% of solve time is
-  model latency (~1.5 s per call); tool calls take milliseconds except `run_tests`
-  (0.5–3 s).
-- **The tool contract held.** One invalid call in 75 (`read_file` with
-  `start="80, 130"`), rejected with a message the model recovered from on the next
-  step; no test-file edits attempted; no patch failed to apply.
-
-Across models (`evals/experiments/baseline-v0-haiku45/`, `baseline-v0-luna/`):
-
-- **Haiku 4.5 (11 / 14).** 14.3 steps and 90.8k tokens per task against Sonnet's
-  5.9 and 18.3k: 5.4 file reads per task, many of them test files, and searches
-  repeated after the answer was in context (`tenacity_003`: 11 search calls, no
-  edit). Six runs ended on the 100k-token cap. Three of those had already produced
-  a correct patch and kept exploring (`toolz_003`: tests green at step 13, eight
-  more steps of reading); the three failures never called `edit_file` at all, and
-  in `tenacity_004` the final message states the exact fix. Cost per task ($0.105)
-  ended up *higher* than Sonnet's despite the lower price per token, because the
-  loop resends the whole history every step — cumulative tokens grow with the
-  square of the trajectory length.
-- **gpt-5.6-luna (14 / 14, $0.003 per task).** Fewer steps than Sonnet but more
-  tool calls (1.3 per step; it issues parallel calls) and one invented argument
-  per task: `edit_file(..., replacement=...)` instead of `new_string`, rejected by
-  the validator and corrected on the next step — 12 of its 144 calls, the 8.3%
-  invalid rate. The schemas are sent without OpenAI's strict mode, so this is
-  exactly the kind of error runtime tool validation should absorb.
-- **Localization never failed — and that is the leak.** The first `edit_file`
-  landed in a gold file in 71 / 71 runs that edited, across all three models,
-  through two channels: Sonnet takes the identifier from the report
-  (`search_symbol` first in 38 / 43 runs, the query verbatim from the report in
-  41 / 43); Haiku and luna run the tests first (16 / 17 and 8 / 14) and follow
-  the failing test to the function. A scan of all 74 traces
-  (`scripts/leak_scan.py`) found no hidden test file or hidden test name in
-  anything the agent saw, and neither the sandbox nor the workspace exposes a
-  history to diff against; what gives the bugs away is the repository itself —
-  comments, docstrings and release notes that describe the reverted behaviour
-  (`tenacity_004`), and textbook fault patterns (`cache={}`, `if not cache`,
-  `type(e) in types`). `docs/leak-audit.md` has the audit and a four-arm
-  ablation (report / tests / neither) to measure each channel; with a larger
-  budget (300k tokens) Haiku also solved its three failures (15–24 steps,
-  $0.13–0.21 each), so they were budget failures, not capability failures.
-- **Statistical caveat.** With 14 tasks one task is 7 points; Haiku's 78.6% has a
-  95% interval of roughly 52–93%. Verdict-level comparisons on v0 need repeats,
-  and success-rate claims need the larger v1. Token, step and termination
-  metrics are far less noisy and already separate the three models cleanly.
-
-Consequences, in order: (1) **Phase 2 (structured runtime)** can be evaluated on
-v0 now — the treatment arm is measured against this baseline on the same three
-models, with success-under-budget for Haiku, budget terminations, steps after the
-tests go green, invalid-call rate and tokens per task as the outcomes; (2)
-**Bench v1** (reports without leaked identifiers, repositories an order of
-magnitude larger, cross-module symptoms, more hidden-only tasks, 30+ tasks) is
-required before the retrieval work of Phase 3 can show anything on success rate.
-
-## The structured runtime (Phase 2a)
-
-`--solver structured` runs the same tools, workspace, sandbox, budget and model
-through a state machine that owns control (spec §5; design and pre-registered
-expectations in `docs/runtime-design.md`):
-
-```
-INITIALIZE  runtime  run the task's tests once, before any change (initial_failures)
-PLAN        model    no tools; {"plan": [...], "suspects": [...]}
-LOCALIZE    model    search_code / search_symbol / find_references / read_file;
-                     a reply without tool calls is the hypothesis
-PATCH       model    the same plus edit_file, never run_tests; a reply without tool
-                     calls and a changed diff hands over to TEST
-TEST        runtime  the full test command; fixed / still failing / newly failing
-                     green -> DONE (FINALIZE first when the suite started green)
-ANALYZE     model    no tools; {"diagnosis", "next": "patch"|"localize", "keep_patch"}
-```
-
-What the runtime does that the baseline leaves to the model: it reproduces
-before planning, verifies after every patching turn, and ends the run on a green
-full-suite run (no exploring after success); it refuses tools outside the phase
-and asks for the hypothesis when a phase's tool budget (10 calls) is spent; it
-refuses the third identical tool call the model can still see (same arguments,
-same workspace version) with a replanning notice and ends the run as
-`agent_loop` when the call is repeated with that notice in view (spec §9.2,
-issue #8); it nudges once when a patching turn
-ends without an edit and ends the run as `no_progress` on the second; it reverts
-the workspace when ANALYZE says so. `max_test_runs = 5` now means one
-reproduction plus at most four patch → test rounds. The conversation history is
-kept in full — 2a changes control only, so the architecture ablation (spec
-§12.2) isolates it; context compaction is Phase 2b.
-
-Every run records the phase transitions, the plan, the hypotheses and their
-fate, each test run's fixed / still-failing / newly-failing sets and the
-intervention counters (`agent.runtime` in `results.jsonl`, `phase` / `decision`
-/ `test_run` / `intervention` / `state` events in the trace); the summary adds
-`verified_rate`, `loop_rate`, steps by phase and the intervention totals.
-### Phase 2a findings
-
-Runs of 2026-09-14 (`evals/experiments/structured-v0-haiku45/`, `-luna/`,
-`-sonnet5/`; the first Haiku run, made before the fix of issue #7, is kept as
-`structured-v0-haiku45-run1`). Read against the expectations written down
-beforehand in `docs/runtime-design.md`:
-
-- **The controls did their job.** No structured run spent a step after its
-  tests were green (the baseline's Haiku wasted 8 steps on `toolz_003` alone);
-  Haiku's `budget_tokens` terminations fell from 6 to 2 in both structured
-  runs, and one of those two still passed because its last edit was in place
-  when the cap hit. Two runs needed the runtime to ask for the hypothesis after
-  10 localization calls; two reverted a patch on request; one hit the loop
-  detector.
-- **Success did not move beyond noise.** Haiku: 11 / 14 → 12 / 14 in both
-  structured runs, but with different failures each time (`tenacity_004` +
-  `toolz_001`, then `cachetools_003` + `toolz_001`), while the baseline's three
-  failures (`cachetools_005`, `tenacity_003`, `tenacity_004`) all passed under
-  the runtime. With 14 tasks and a model this variable, the success metric
-  needs repeats before it says anything; the efficiency metrics already do.
-- **What still fails, from the traces.** (1) *Exact-text edits*: `toolz_001`
-  failed both times the same way — 7 `edit_file` calls alternating between a
-  4- and a 5-space indentation copied from the numbered listing, none matching
-  the file's 15-space continuation line; the second run ended as `agent_loop`
-  when the identical call came back a fourth time. Across the 130 traces of
-  both arms, 14 `edit_file` calls failed on whitespace — none in the baseline
-  runs, 12 in the structured Haiku runs (10 of them on `toolz_001`), 2 in
-  luna's. (2) *Context
-  growth*: a 15-step run whose reads replay 100–150 lines each still reaches
-  100k tokens (`cachetools_003`: 103k at step 15, no patch left). (3) *A poor
-  decision the runtime executed faithfully*: `cachetools_003`'s first patch
-  fixed both initially failing tests and broke one; ANALYZE chose "revert and
-  localize again", which threw the progress away and ran out the budget
-  reading. The baseline's Haiku had passed this task by patching the guard.
-- **One runtime bug, found by reading the first run.** `tenacity_004` ended
-  `budget_tokens` on the very reply that carried the correct edit, because the
-  cap was checked before the reply's tool calls ran (issue #7). Fixed: a reply's
-  tool calls execute first; the run then ends as `budget_tokens` with its patch
-  in the workspace, as the baseline always did. `tenacity_004` passed on the
-  re-run.
-- **Cost of structure on strong models.** Sonnet: 5.9 → 6.9 steps, $0.045 →
-  $0.053 (+19%, within the +20% pre-registered), tool calls ≈5 → 3.9 (the
-  runtime's reproduction run replaces the model's own test calls). luna: 7.7 →
-  8.1 steps, tokens +16% but cost +55% ($0.003 → $0.0045; the JSON decision
-  points cost it reasoning tokens), invalid calls 8.3% → 10.8% (14 of 129, the
-  same `edit_file(replacement=…)` habit; nothing in 2a targets it).
-
-- **2a.1 — tolerant edits and a progress-aware ANALYZE** (pre-registered in
-  `docs/runtime-design.md` §7, measured with `--repeat 2` on both arms). `edit_file`
-  now falls back to a unique whitespace-tolerant match when the exact text is
-  not found, re-indents the replacement to the file and says so; a miss shows the
-  closest region of the file verbatim; ANALYZE states what the patch fixed and
-  broke before offering to revert it. Results against the expectations:
-  whitespace-failed edits 12 → **0** (5 structured and 3 baseline edits went
-  through the fallback, every one of them in a run that passed); `toolz_001`
-  passed both times (7 and 10 steps instead of 18–19); `agent_loop` 0; no patch
-  that had fixed initial failures was reverted (the two resets were on
-  `toolz_003` patches that fixed nothing and broke one test — the right call);
-  structured success 13 / 14 in both runs, with identical verdicts. The one
-  expectation that failed is the control arm: the baseline moved from 11 / 14 to
-  12 / 14 and 14 / 14, more than "within one task". Its three tolerant edits were
-  on tasks it had already passed, so the lift is run-to-run variance — its two
-  former failures passed on `budget_tokens` with the patch in place — not the
-  tool. Conclusion: with the same tools, the arms tie on success (26 / 28 each),
-  and the runtime wins on every efficiency and reliability metric.
-- **What remains: one task, near the cap.** `cachetools_003` fails under the
-  runtime the same way each time: the first patch fixes both initially failing
-  tests and breaks `test_missing_getsizeof`; ANALYZE keeps the patch (the 2a.1
-  framing worked) but goes back to localizing, re-reads 100–150-line slices,
-  and the run hits the 100k-token cap at step 15–16 with the regression still
-  in. Deterministic over the first two runs, it passed 1 of 3 in the final
-  full-history experiment and 2 of 3 with the compact context: the guard
-  (`key in self.__order`) is found when the model reaches it before the cap.
-  The baseline fails the same task in one of two runs. That the cap is where
-  it fails is what Phase 2b was for.
-
-- **2b — context compaction** (`--context compact`, built; pre-registered in
-  `docs/runtime-design.md` §8). Every model call is rebuilt from the runtime's
-  working state (task, initial failures one line each, plan, hypotheses,
-  diagnoses, files read as line ranges, searches, the current diff, the latest
-  test run, budget left) plus the last three tool-calling steps verbatim and
-  the current phase's instructions; nothing is summarised by a model. A replay
-  of the 2a.1 traces predicted 55–60% of the cumulative tokens. Two Haiku
-  runs so far (2 × 14 each, `evals/experiments/structured-2b-haiku45-x2-run1`
-  and `-run2`), each followed by a runtime fix the traces demanded. Run 1:
-  −31% tokens, −24% cost, 25 / 28 — both `toolz_003` failures were the loop
-  detector refusing re-reads its own context strategy had made necessary
-  (issue #8: signatures now carry the workspace version, only calls the model
-  can still see count, re-reads are tallied as `rereads`). Run 2: −38%
-  tokens (median 34.8k), −32% cost ($0.043), 27 / 28 at the same 10.8 steps —
-  but `toolz_003` still ended `agent_loop` twice, now with the right patch in
-  place: the compact arm re-sent the one-time note "your change has been
-  reverted" on every turn after the model's next edit (issue #9: runtime
-  events are now dated in the state, the re-sent instructions are bare, and
-  the state says which patch the latest test run saw). Run 3, on the code as
-  it stands (`evals/experiments/structured-2b-haiku45-x2`): 26 / 28
-  with the full arm's exact verdict pattern (`cachetools_003` fails both
-  repeats, everything else passes both), `agent_loop` 0, tokens median 38.1k
-  (−32%), cost $0.046 (−27%), steps 11.2 vs. 10.9, nine re-reads of code that
-  had left the window. The compact arm was frozen there, and the final
-  experiment (§9: both structured arms on this code, `--repeat 3`, back to
-  back) is the table at the top: 40 / 42 in both arms, 57.6k → 38.4k tokens
-  and $0.066 → $0.047 per task, verified green runs 90.5% → 95.2%, budget
-  terminations 4 → 2, steps 11.2 → 10.9; the price is 17 re-reads in 42 runs,
-  more forced hypotheses and nudges (10 / 4 against 6 / 0), and 1.7% invalid
-  calls where the state's `418-450` range notation came back as
-  `start="[418, 450]"`. Every §9 expectation held except the failing tasks'
-  names: `cachetools_003` passed twice in three compact runs, and
-  `cachetools_001` failed once (a wrong first method, then re-localisation to
-  the cap). On Sonnet and luna, compaction did not pay (Sonnet's runs are
-  too short to compact; luna's cost rose 64% because rebuilding the prompt
-  forfeits OpenAI's automatic prefix cache — see the table). A
-  threshold-triggered hybrid and model-written summaries stay out of scope
-  (§8.3); prompt caching on the full-history arm is the open measurement.
-
-## Retrieval (Phase 3)
-
-`repopilot/retrieval/` indexes the buggy tree the agent works on: one chunk per
-function, method, class (header, docstring, attributes and one line per method
-signature) and module (docstring, imports, top-level statements), from Python's
-`ast`; three channels over those chunks — BM25 over code-aware tokens
-(identifiers split on `_` and CamelCase, no dependency), dense embeddings
-(`BAAI/bge-small-en-v1.5` through `fastembed`, ONNX on CPU, no key; a hashing
-stand-in for tests and CI), and a symbol channel that resolves identifiers in
-the query to the chunks that define, contain or import them — fused by
-reciprocal rank fusion (spec §7). The index is rebuilt lazily when the tree
-changes and embeddings are cached per model by chunk hash, so an edit
-re-embeds only what it touched and a second run of a task embeds nothing.
-
-The structured agent gets it two ways, measured separately (`--retrieval`):
-`tool` adds `retrieve(query, k, include_tests)` to LOCALIZE and PATCH, and the
-model decides whether to call it; `evidence` also has the runtime retrieve
-the report's top five chunks before PLAN and keep them in front of the model
-until its first edit (in the PLAN prompt with the full history; in the
-working state with the compact context while no patch is in place).
-Every retrieval is in the trace with each chunk's rank in each channel.
-
-What v0 can measure about it is written down first, in
-`docs/retrieval-design.md`: the leak audit showed localization is free on v0,
-so the prediction is that success does not move; what should move is the
-cost of localization (LOCALIZE was 253 of Haiku's 456 compact steps). Retrieval
-*quality* is measured offline — the report as the query, the task's gold
-files and symbols as the relevant set (`scripts/retrieval_eval.py`, no model):
-
-| configuration | Recall@5 file | Recall@10 file | MRR file | Recall@10 symbol | MRR symbol | query (p50) |
-| --- | --- | --- | --- | --- | --- | --- |
-| BM25 | 0.93 | 0.93 | 0.86 | 0.93 | 0.54 | 1.7 ms |
-| dense (bge-small) | 0.93 | **1.00** | 0.87 | **1.00** | 0.81 | 36 ms |
-| symbol | 0.86 | 0.93 | 0.65 | 0.93 | 0.48 | 0.5 ms |
-| BM25 + dense | 0.93 | 0.93 | 0.86 | 0.93 | 0.80 | 39 ms |
-| BM25 + dense + symbol | 0.93 | 0.93 | **0.93** | 0.93 | **0.89** | 43 ms |
-
-`evals/experiments/retrieval-v0/` (2026-09-18, 14 tasks, 6,467 chunks; the
-first index of each repository takes 56–100 s to embed on a laptop CPU, every
-later task of the same repository 0.2–0.4 s from the cache). Two things the
-pre-registration got wrong, in opposite directions: the small embedding model
-is the best single channel, not the weakest (predicted 0.60–0.80 recall,
-measured 1.00), and fusion does not dominate its inputs. On `cachetools_005` —
-the one v0 task whose report names only the public surface (`@cached(...)`)
-while the bug sits in the private module it delegates to — only the dense
-channel reaches the gold (ranks 6 and 10), and reciprocal rank fusion, which
-rewards agreement between channels, lets the lexical and symbol channels'
-shared wrong picture outvote it: fused Recall@10 stays at BM25's 0.93 while
-fused MRR is the best of any configuration (the gold is rank 1 for 13 of 14
-tasks). That task is the shape Bench v1 will have more of, and where the
-retrieval configurations will separate.
-
-Agent level (Haiku, compact context, 2 × 14 per arm, `evals/experiments/structured-p3-{tool,evidence}-haiku45-x2`,
-against the Phase 2 compact control):
-
-| arm | success | steps | LOCALIZE steps / run | PATCH steps / run | tool calls | tokens / task (median) | cost / task | `retrieve` calls | forced hypotheses / run |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `none` (Phase 2 final, 3 × 14) | 40 / 42 | 10.9 | 6.0 | 3.5 | 8.5 | 38.4k | $0.047 | – | 0.24 |
-| `tool` | 27 / 28 | 11.3 | 7.0 | 3.0 | 8.6 | 41.3k | $0.050 | **0** | 0.29 |
-| `evidence` | 27 / 28 | 10.5 | **5.2** | 4.0 | **7.1** | 41.2k | $0.050 | **0** | **0.14** |
-
-Two results, neither the one pre-registered. Haiku never called `retrieve`
-— not once in 56 runs with the tool in every LOCALIZE and PATCH prompt — so
-a retrieval tool the model *may* use is no retrieval for this model, and the
-`tool` arm is a re-run of the control (same 27 / 28, `cachetools_003`). The
-evidence the runtime pushed at PLAN (the gold file at rank 1 in 26 of 28
-runs) did shorten localization — LOCALIZE steps −26%, `search_symbol` calls
-39 → 6, forced hypotheses halved, several runs hypothesising at their first
-turn with no tool call — and the runtime gave the saving back: the compact
-state dropped the evidence at PATCH, `edit_file` needs the exact text, and 28
-of the arm's 33 PATCH-phase reads re-read what the evidence had shown
-(issue #12). Tokens per task ended flat. The same runs exposed a bug in the
-2a.1 whitespace-tolerant edit (inserted lines re-indented by the wrong
-offset, and a model correcting the indentation overruled by the file — issue
-#11; one `toolz_003` run spent 12 steps and hit the cap with the right patch
-already in place). Both were fixed and the experiment re-run with the
-expectations written first (`docs/retrieval-design.md` §9; the control
-re-run too, because a shared tool changed).
-
-**Phase 3.1** (Haiku, compact, 2 × 14 per arm,
-`evals/experiments/structured-p31-{none,evidence}-haiku45-x2`; §10 of the
-design doc has the full reading):
-
-| arm | success | steps | LOCALIZE / PATCH steps per run | tool calls | re-reads after the window | LOCALIZE cap reached | tokens / task (median · mean) | cost / task | `budget_tokens` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `none` | **28 / 28** | 11.4 | 6.6 / 3.6 | 9.0 | 18 | 10 | 37.3k · 44.4k | $0.047 | 0 |
-| `evidence` | 27 / 28 | **8.9** | **4.8 / 2.9** | **5.6** | **6** | **4** | 36.8k · 42.3k | $0.045 | 1 |
-
-Every step-side expectation held with margin — steps −22%, tool calls −38%,
-`search_symbol` calls 41 → 5, PATCH back under 3 steps (the re-reads: 2 of
-11 PATCH reads while the evidence is in view, down from 28 of 33), the
-evidence holding the region the model went on to edit in 26 of 28 runs (the
-two misses are `cachetools_005`, the offline miss; both passed by search) —
-and the token expectation did not: median −0.5k against a pre-registered
-≥ 2k, mean −4.8%, cost −6%. The reason is in the per-phase numbers: each
-call before the first edit carries the evidence block, so PLAN 2.2k → 3.5k
-input tokens, LOCALIZE 3.7k → 4.7k per call, PATCH 4.0k → 4.6k; 22% fewer
-calls at 20–26% more tokens each is a wash at the median, a saving only on
-the runs that were long without it (`cachetools_001` 70k → 52k) and a cost
-on the short ones (`tenacity_003` 24k → 31k, seven steps either way). So
-the pre-registered fallback is the conclusion: on v0, where localization is
-free, runtime-injected evidence is a step, tool-call and re-read saver, not
-a token saver. The one failure, `cachetools_003.1`, is the benchmark's
-hardest task on a budget edge, not an evidence effect — 17–22 steps and
-70–101k tokens in all four runs across both arms, the first patch breaking
-`test_missing_getsizeof` every time; this run's second patch used a
-name-mangled attribute that does not exist in the subclass and the run hit
-the 100k token cap at 100,984, one TEST run short of seeing it. The two
-whitespace-matched edits per arm all landed at the right indentation (issue
-#11's shape among them); the edit-cap forced test never fired in 56 runs.
 
 ## RepoPilot-Bench v1
 
@@ -852,55 +404,230 @@ information without naming the site; the no-tests arm is within one task
 of the full arm (and ahead of it on the tasks whose tests fail visibly),
 which says the existing tests are not what locates a v1 bug.
 
-## RepoPilot-Bench v0
+Bench v0 came first: 14 controlled-mutation tasks on cachetools, toolz and
+tenacity, saturated by the first baseline runs (Sonnet and luna 100 %,
+Haiku 95 % under the runtime) because the reports named the changed symbol,
+the existing tests already failed, and the symptom sat in the module of the
+cause. Its tasks, harness acceptance and the Phase 1–3 results measured on
+it are in [`docs/results-v0.md`](docs/results-v0.md).
 
-14 controlled-mutation tasks on three small, pure-Python libraries pinned to one
-commit each (cachetools 7.1.8, toolz 1.1.0, tenacity 9.2.0). Every task is a
-small bug injected into the library (at most six changed lines in the diff), a
-bug report written from the outside
-(what a user would observe, never the fix), and a hidden regression test that the
-agent never sees. `fail_to_pass` lists the tests a fix must turn green — the
-hidden ones plus whatever existing tests the bug already breaks — and
-`pass_to_pass` is everything else the task's test command collects.
+## Quick start
 
-| id | category | difficulty | mutation site | fail_to_pass (visible + hidden) | pass_to_pass |
-| --- | --- | --- | --- | --- | --- |
-| cachetools_001 | cache_invalidation | medium | `TTLCache.expire` | 2 + 2 | 56 |
-| cachetools_002 | cache_invalidation | hard | `TLRUCache.__setitem__` | 1 + 2 | 64 |
-| cachetools_003 | state_management | medium | `LRUCache.__getitem__` | 2 + 2 | 52 |
-| cachetools_004 | off_by_one | easy | `Cache.__setitem__` | 28 + 2 | 22 |
-| cachetools_005 | wrong_condition | medium | `cached()` wrapper | 20 + 2 | 54 |
-| tenacity_001 | retry_logic | easy | `stop_after_attempt.__call__` | 23 + 2 | 112 |
-| tenacity_002 | retry_logic | medium | `wait_exponential.__call__` | 8 + 2 | 127 |
-| tenacity_003 | exception_handling | medium | `retry_if_exception_type._check` | 12 + 2 | 123 |
-| tenacity_004 | exception_handling | hard | `RetryError.reraise` | 1 + 2 | 134 |
-| tenacity_005 | missing_check | medium | `wait_chain.__call__` | 2 + 2 | 133 |
-| toolz_001 | off_by_one | easy | `sliding_window` | 1 + 3 | 59 |
-| toolz_002 | wrong_condition | medium | `unique` | 1 + 3 | 59 |
-| toolz_003 | missing_check | medium | `dissoc` | 0 + 3 | 57 |
-| toolz_004 | state_management | hard | `memoize` | 0 + 3 | 48 |
+### Setup
 
-Seven categories, each twice; 3 easy / 8 medium / 3 hard. Twelve tasks have at
-least one existing test that fails with the bug, so an agent can reproduce them by
-running the suite; two (`toolz_003`, `toolz_004`) are caught only by the hidden
-test and must be reproduced from the description. Difficulty is set by how much
-the description gives away, not by patch size — every gold patch is tiny.
+```bash
+uv sync                                   # creates .venv and installs dev tools
+uv sync --extra retrieval                 # + the local embedding model (fastembed; optional)
+uv run pytest                             # unit tests; Docker tests skip if no daemon
+uv run pytest -m docker                   # sandbox end-to-end tests (needs Docker running)
+uv run ruff check . && uv run ruff format --check .
+uv run python scripts/validate_tasks.py   # validate every task + the suite report (v1 targets)
+uv run python -m evals.runner --list      # tasks that a benchmark run would select
+```
 
-**Harness acceptance (2026-09-10, MacBook Air / Docker Desktop, one container
-per run):**
+Docker (Docker Desktop, OrbStack or colima) is required for sandboxed test
+execution. The first `-m docker` run builds the base image (python:3.11-slim +
+git + pytest), which takes a minute or two; later runs reuse it.
 
-| run | result | wall time |
+### Models and API keys
+
+The agent talks to models through one small interface
+(`repopilot/models/`): neutral `Message` / `ToolSpec` / `ModelResponse` types,
+an adapter per vendor (Anthropic Messages API, OpenAI Responses API), a
+`FakeClient` that plays scripted replies for tests, a price table, and a
+`Ledger` that turns every call into tokens, latency and an estimated cost and
+enforces the cost / token caps of the agent budget (spec §9.1). Two model roles
+follow the routing ablation (§12.4): a *strong* model for planning and patching
+and a *cheap* one for rewriting and summarizing.
+
+| role | default | override |
 | --- | --- | --- |
-| `--solver null --expect fail` | 0 / 14 pass, every failure `fail_to_pass_failing` | 21 s |
-| `--solver gold --expect pass --repeat 2` | 28 / 28 pass, per-test outcomes identical across repeats (14 / 14) | 38 s |
+| strong | `claude-sonnet-5` ($2 / $10 per MTok in / out) | `REPOPILOT_STRONG_MODEL` or a CLI flag |
+| cheap | `claude-haiku-4-5-20251001` ($1 / $5) | `REPOPILOT_CHEAP_MODEL` or a CLI flag |
 
-These numbers describe the harness, not an agent: a null solver must fail every
-task, the reference fix must pass every task, and nothing may be flaky. The
-first agent numbers will come from Phase 1.
+OpenAI counterparts (`gpt-5.6-terra` $2 / $12, `gpt-5.6-luna` $0.20 / $1.20)
+plug in by name; any model used must have an entry in
+`repopilot/models/pricing.py`, so a cost is never unknown. Costs are estimates
+from that table (dated inside the file), not from the vendors' billing pages,
+which makes them reproducible from a trace alone.
 
-The audit trail for every task is its source directory
-(`evals/benchmark/sources/<id>/`), and `tests/test_benchmark_tasks.py` fails the
-unit suite if a task JSON ever drifts from its sources.
+Keys never appear in code, traces, logs or the sandbox (containers start with
+a clean environment and no network). They come from the environment only:
+
+```bash
+cp .env.example .env                       # git-ignored; fill in ANTHROPIC_API_KEY / OPENAI_API_KEY
+uv run python scripts/model_smoke.py       # one tiny text + tool-call round trip per model, ~$0.001
+uv run pytest -m llm                       # the same as tests; skipped automatically without keys
+```
+
+CLI entry points load `.env`; library code only reads `os.environ`, and error
+messages name the missing variable, never a value. CI runs with no keys and
+deselects `-m llm`; `tests/test_no_secrets.py` fails the build if a key prefix
+is ever committed. Use a dedicated key per provider with a spend limit set in
+the vendor console, and revoke it if it leaks.
+
+### Running the benchmark
+
+```bash
+uv run python -m evals.runner --solver null --expect fail            # untouched: all FAIL
+uv run python -m evals.runner --solver gold --expect pass --repeat 2 # reference fix: all PASS, twice
+uv run python -m evals.runner --solver gold --ids cachetools_001     # a subset
+```
+
+Every run writes `results/<solver>-<timestamp>-<id>/` with `results.jsonl` (one
+record per task and repeat: status, reason codes, per-test outcomes, timings),
+`summary.json` (counts, pass rate, determinism verdict) and `logs/<task>.log`
+(the candidate patch, the test output, the per-test verdict table). The two
+commands above are the harness's own acceptance test: a task that the null solver
+passes or the gold solver fails is mis-packaged, and a task whose outcome differs
+between repeats is flaky.
+
+A solver is anything with `solve(task, image) -> patch | None`; the harness always
+judges the returned patch in a fresh container, so a solver's own workspace can
+never influence the verdict. Any section of a candidate patch that touches a test
+file is stripped before judging and recorded (`patch_test_files`): the benchmark's
+own tests decide, so editing them can only hide a bug.
+
+## Design notes
+
+### The baseline agent (the control arm)
+
+`--solver baseline` runs `repopilot/agent/baseline.py`: a plain tool-calling loop
+— system prompt, bug report, then *model → tools → results* until the model
+stops or the budget is spent. No planning phase, no state machine, no loop
+detection, no context compaction: it is the unconstrained end of the
+architecture ablation (spec §12.2), and every later phase is measured against it.
+
+```bash
+uv run python -m evals.runner --solver baseline --ids cachetools_004 --max-run-cost 2   # one task
+uv run python -m evals.runner --solver baseline --max-run-cost 10                       # all tasks
+uv run python -m evals.runner --solver baseline --model gpt-5.6-terra --max-steps 20    # variations
+uv run python -m evals.runner --solver structured --model claude-haiku-4-5-20251001 --max-run-cost 10  # Phase 2a runtime
+uv run python -m evals.runner --solver structured --context compact --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # 2b
+uv run python -m evals.runner --solver structured --context compact --retrieval evidence --model claude-haiku-4-5-20251001 --repeat 2 --max-run-cost 10  # Phase 3
+uv run python -m evals.runner --solver baseline --suite v1-new --report redacted --no-run-tests    # Bench v1: --suite {v0,v1,v1-new}, leak-ablation arms
+uv run python scripts/retrieval_eval.py                # offline: Recall@k / MRR per retrieval configuration, no model
+```
+
+The agent works on a host-side git checkout of the buggy tree (`repopilot/tools/`)
+through six typed tools — `search_code`, `search_symbol`, `find_references`,
+`read_file`, `edit_file`, `run_tests` — and only `run_tests` touches the sandbox:
+the workspace diff is applied to a fresh copy of the tree in the container and
+pytest runs there. The final diff is the candidate patch. Every task runs under
+the same budget (spec §9.1: 30 model calls, 40 tool calls, 5 test runs, 100k
+tokens, $0.50, 600 s by default; `--max-*` flags change it for a whole run), and
+`--max-run-cost` caps the spend of the entire benchmark run.
+
+Each task leaves a trace (`results/<run>/traces/<task>.jsonl`, spec §13.1): the
+run's metadata, every model call with tokens / latency / cost, every tool call
+with arguments, duration, result and errors, the final patch, the budget state and
+the termination reason. `summary.json` adds an `agent` block (spec §11.1): success,
+patch and regression rates, steps / tool calls / test runs, invalid-tool-call
+rate, tokens, cost (median and total), solve latency p50 / p95, termination
+counts, success by category and difficulty — and a first-cut failure taxonomy
+(spec §11.2) derived from the verdict, the termination and whether the agent ever
+read or edited a gold file: `retrieval_failure` (localization: no gold file read
+or edited, whatever ended the run), `reasoning_failure`, `wrong_localization`,
+`incorrect_patch`, `regression_introduced`, `budget_exceeded` (a gold file was
+reached, the budget ran out), `test_misunderstanding`, `tool_failure`,
+`environment_failure`. The taxonomy is heuristic and exists to point at the
+highest-leverage problem, not to be ground truth. Since Bench v1 the block also
+carries the localization measures the leak audit computed by hand — first edit
+in a gold file, gold file read before the first edit — and success broken down
+by suite, repository, report tier, hidden-only, cross-module and fix shape.
+
+### Retrieval
+
+`repopilot/retrieval/` indexes the buggy tree the agent works on: one chunk per
+function, method, class (header, docstring, attributes and one line per method
+signature) and module (docstring, imports, top-level statements), from Python's
+`ast`; three channels over those chunks — BM25 over code-aware tokens
+(identifiers split on `_` and CamelCase, no dependency), dense embeddings
+(`BAAI/bge-small-en-v1.5` through `fastembed`, ONNX on CPU, no key; a hashing
+stand-in for tests and CI), and a symbol channel that resolves identifiers in
+the query to the chunks that define, contain or import them — fused by
+reciprocal rank fusion (spec §7). The index is rebuilt lazily when the tree
+changes and embeddings are cached per model by chunk hash, so an edit
+re-embeds only what it touched and a second run of a task embeds nothing.
+
+The structured agent gets it two ways, measured separately (`--retrieval`):
+`tool` adds `retrieve(query, k, include_tests)` to LOCALIZE and PATCH, and the
+model decides whether to call it; `evidence` also has the runtime retrieve
+the report's top five chunks before PLAN and keep them in front of the model
+until its first edit (in the PLAN prompt with the full history; in the
+working state with the compact context while no patch is in place).
+Every retrieval is in the trace with each chunk's rank in each channel.
+
+Retrieval quality is measured offline, with the bug report as the query and
+the task's gold files as the relevant set (`scripts/retrieval_eval.py`, no
+model). On the 36 new tasks, whose reports never name the changed symbol:
+
+| configuration | Recall@10 (file) | MRR (file) | v0 (14 tasks): Recall@10 / MRR | query (p50) |
+| --- | --- | --- | --- | --- |
+| BM25 | **0.86** | 0.53 | 0.93 / 0.86 | 4 ms |
+| dense (bge-small) | 0.78 | **0.58** | 1.00 / 0.87 | 63 ms |
+| symbol | 0.22 | 0.14 | 0.93 / 0.65 | 1 ms |
+| BM25 + dense | **0.86** | 0.57 | 0.93 / 0.86 | 69 ms |
+| BM25 + dense + symbol | **0.86** | 0.44 | 0.93 / 0.93 | 71 ms |
+
+`evals/experiments/retrieval-v1` (55,170 chunks; the first index of a
+repository takes 1–5 minutes to embed on a laptop CPU, every later task of
+the same repository comes from the cache). Two things the v1 reports do to
+retrieval: the symbol channel, best-first-hit on v0, has nothing to match
+once reports stop naming symbols (0.93 → 0.22), and fusing it in costs MRR
+(0.57 → 0.44) at equal recall — reciprocal rank fusion rewards agreement
+between channels, so a hit that only one channel sees is buried, first seen
+on `cachetools_005` in v0 and systematic on v1. Recall by file stays high
+(0.86, above the 0.55–0.80 pre-registered); what got harder is the rank
+(MRR 0.57 against 0.86), and on the 29 cross-module tasks fused MRR is 0.44
+against 0.93 on the same-module ones — the number that predicted the
+`evidence` arm's result. The v0 tables and the Phase 3 / 3.1 agent runs are
+in [`docs/results-v0.md`](docs/results-v0.md).
+
+### Task format
+
+A task is one reproducible debugging problem: a repository pinned to a full commit
+SHA, the bug report the agent sees, the reference fix, and the tests that decide
+success. Success is deterministic — after the candidate patch (plus the hidden test
+patch) is applied, every `fail_to_pass` test must pass **and** every `pass_to_pass`
+test must still pass. There is no LLM judge.
+
+Two task sources: `real` (the bug already exists at `base_commit`, the fix was
+taken from `fix_commit`) and `mutation` (`base_commit` is clean and the harness
+injects the bug with `bug_patch` before the agent sees the repository). Since
+Bench v1 a task also records what its bug report gives away: the `suite` it
+belongs to, its `report_level` (`internal` names the changed symbol — the v0
+tier; `public_api` names only documented public API; `symptom_only` nothing
+below the task's `entry_points`), the repository symbols and files the report
+actually names (`surface_symbols` / `surface_files`, resolved by the report
+audit against the tree the agent sees) and whether the fix lives somewhere the
+report does not point at (`cross_module`). `difficulty` is derived from those
+facts — one point each for cross-module, hidden-only, a multi-site fix and a
+symptom-only report — rather than judged. See `evals/benchmark/schema.py` for
+every field and the invariants the loader enforces,
+`evals/benchmark/examples/example_000.json` for a complete example and
+`docs/bench-v1-design.md` for the rules.
+
+Tasks are not written by hand. A source directory holds the human parts — the
+mutation as a patch, a hidden regression test, the bug report, a few lines of
+metadata — and `scripts/make_task.py` derives the rest by running the code: the
+gold patch is the exact reverse of the mutation, the localization targets come from
+the patch hunks and the AST, and `fail_to_pass` / `pass_to_pass` come from two
+sandbox runs (buggy vs. fixed, both with the hidden tests). A task whose hidden
+test does not catch the bug, or whose fix breaks an existing test, or whose report
+names what its tier forbids, is refused. See `docs/benchmark-authoring.md`.
+
+### Sandbox
+
+Each task gets a content-addressed Docker image (`repopilot-task:<hash>`): the
+repository tree at `base_commit` is exported on the host, copied into the image,
+turned into a single-commit git history (nothing to leak through `git log`), the
+install command runs, and for mutation tasks `bug_patch` is applied and amended into
+that one commit. Network is on during the build only. Every run then starts a fresh
+container with `--network none`, CPU / memory / pids limits, all capabilities
+dropped and an unprivileged user; `Sandbox.run_tests` loads a small pytest plugin
+that writes exact node-id outcomes to JSON, so a missing node id is always
+"not passed", never a parsing accident.
 
 ## Layout
 
@@ -980,6 +707,7 @@ docs/bench-v1-acceptance.md  Bench v1 acceptance run sheet: oracles, leak ablati
                            probe, offline retrieval — commands, expectations, measured, readings
 docs/bench-v1-agents.md    Bench v1 agent runs: five arms, expectations vs measured, failure
                            taxonomy, per-task readings, the follow-ups pre-registered next
+docs/results-v0.md         the v0 chapter: Phase 1–3 results, findings and the v0 tasks (moved from here)
 scripts/                   make_task.py, validate_tasks.py (+ the suite report and --audit),
                            export_task_schema.py, model_smoke.py,
                            archive_run.py (results/<run> -> evals/experiments/<name>),
@@ -988,67 +716,13 @@ scripts/                   make_task.py, validate_tasks.py (+ the suite report a
                            memorization_probe.py (recall of gold symbols per model, no tools)
 tests/                     unit tests (fast) + `-m docker` end-to-end tests;
                            test_benchmark_tasks.py checks the shipped tasks against their sources
+LICENSE                    MIT; THIRD_PARTY_NOTICES.md: the seven benchmark repositories and their licenses
 ```
 
-## Task format
+## License
 
-A task is one reproducible debugging problem: a repository pinned to a full commit
-SHA, the bug report the agent sees, the reference fix, and the tests that decide
-success. Success is deterministic — after the candidate patch (plus the hidden test
-patch) is applied, every `fail_to_pass` test must pass **and** every `pass_to_pass`
-test must still pass. There is no LLM judge.
-
-Two task sources: `real` (the bug already exists at `base_commit`, the fix was
-taken from `fix_commit`) and `mutation` (`base_commit` is clean and the harness
-injects the bug with `bug_patch` before the agent sees the repository). Since
-Bench v1 a task also records what its bug report gives away: the `suite` it
-belongs to, its `report_level` (`internal` names the changed symbol — the v0
-tier; `public_api` names only documented public API; `symptom_only` nothing
-below the task's `entry_points`), the repository symbols and files the report
-actually names (`surface_symbols` / `surface_files`, resolved by the report
-audit against the tree the agent sees) and whether the fix lives somewhere the
-report does not point at (`cross_module`). `difficulty` is derived from those
-facts — one point each for cross-module, hidden-only, a multi-site fix and a
-symptom-only report — rather than judged. See `evals/benchmark/schema.py` for
-every field and the invariants the loader enforces,
-`evals/benchmark/examples/example_000.json` for a complete example and
-`docs/bench-v1-design.md` for the rules.
-
-Tasks are not written by hand. A source directory holds the human parts — the
-mutation as a patch, a hidden regression test, the bug report, a few lines of
-metadata — and `scripts/make_task.py` derives the rest by running the code: the
-gold patch is the exact reverse of the mutation, the localization targets come from
-the patch hunks and the AST, and `fail_to_pass` / `pass_to_pass` come from two
-sandbox runs (buggy vs. fixed, both with the hidden tests). A task whose hidden
-test does not catch the bug, or whose fix breaks an existing test, or whose report
-names what its tier forbids, is refused. See `docs/benchmark-authoring.md`.
-
-## Sandbox
-
-Each task gets a content-addressed Docker image (`repopilot-task:<hash>`): the
-repository tree at `base_commit` is exported on the host, copied into the image,
-turned into a single-commit git history (nothing to leak through `git log`), the
-install command runs, and for mutation tasks `bug_patch` is applied and amended into
-that one commit. Network is on during the build only. Every run then starts a fresh
-container with `--network none`, CPU / memory / pids limits, all capabilities
-dropped and an unprivileged user; `Sandbox.run_tests` loads a small pytest plugin
-that writes exact node-id outcomes to JSON, so a missing node id is always
-"not passed", never a parsing accident.
-
-## Phase 0 checklist
-
-- [x] Repository skeleton, `pyproject.toml`, task schema + registry + unit tests
-- [x] Docker sandbox: per-task image build, throwaway container, `--network none`,
-      CPU/memory/pids/time limits, per-test outcomes (`uv run pytest -m docker`)
-- [x] Runner with `null` and `gold` oracle solvers, `--expect` and `--repeat`
-      (`null` → 0/N, `gold` → N/N, repeated runs identical) — verified end to end
-      on a fixture task by `uv run pytest -m docker`
-- [x] Task authoring pipeline (`scripts/make_task.py`, `docs/benchmark-authoring.md`):
-      derived gold patch / symbols / test sets, packaging mistakes rejected up front
-- [x] 10–20 controlled-mutation tasks on cachetools, toolz and tenacity (pinned
-      commits in `docs/benchmark-authoring.md`): 14 tasks, `null → 0/14`,
-      `gold → 28/28` over two repeats with identical per-test outcomes (2026-09-10)
-
-Phase 0 is complete; Phases 1–3 and Bench v1 followed, in that order, each
-measured against the previous one — the results are at the top of this
-file, the run sheets under `docs/`, the runs under `evals/experiments/`.
+MIT (`LICENSE`). RepoPilot-Bench is derived from seven open-source
+repositories — the bug patches are diffs against their code, the
+historical-fix tasks transplant their regression tests, and the archived
+traces quote their sources; `THIRD_PARTY_NOTICES.md` lists each repository,
+its pinned commits, its license and its copyright notice.
